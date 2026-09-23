@@ -28,6 +28,8 @@ const PlayerState = {
     currentEpisodeNumber: 1,
     currentEpisodeUrl: '',
     currentStreamUrl: '',
+    currentStreamKey: null,
+    currentStreamExp: null,
     episodes: [],
     hls: null,
     isLoading: false,
@@ -47,10 +49,193 @@ function getEl(id) {
     return document.getElementById(id);
 }
 
+/**
+ * LOCAL DATA MANAGER: Bookmarks ("Watch Later") & Episode Progress Tracking
+ * 100% Offline and Private - stored in browser localStorage
+ */
+const UserDataManager = {
+    STORAGE_KEY: 'reeldrama_user_data',
+    data: {
+        bookmarks: {},  // dramaKey -> { id, title, poster, url, tags, episodes, savedAt }
+        progress: {}    // dramaKey -> { lastWatchedEp, lastWatchedAt, watchedList: [] }
+    },
+
+    init() {
+        this.load();
+        this.updateBadge();
+    },
+
+    getDramaKey(dramaUrl) {
+        if (!dramaUrl) return '';
+        return String(dramaUrl).split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '').toLowerCase();
+    },
+
+    load() {
+        try {
+            const raw = localStorage.getItem(this.STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === 'object') {
+                    const cleanBookmarks = {};
+                    for (const [k, v] of Object.entries(parsed.bookmarks || {})) {
+                        if (v && v.url && !/^file:/i.test(v.url) && !/^file:/i.test(v.poster || '')) {
+                            cleanBookmarks[k] = v;
+                        }
+                    }
+                    this.data.bookmarks = cleanBookmarks;
+                    this.data.progress = parsed.progress || {};
+                }
+            }
+        } catch (e) {
+            console.warn('[UserDataManager] Failed to read from localStorage:', e);
+        }
+    },
+
+    save() {
+        try {
+            localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.data));
+        } catch (e) {
+            console.warn('[UserDataManager] Failed to write to localStorage:', e);
+        }
+        this.updateBadge();
+    },
+
+    updateBadge() {
+        if (!elements.navBookmarkCount) return;
+        const count = Object.keys(this.data.bookmarks || {}).length;
+        if (count > 0) {
+            elements.navBookmarkCount.textContent = count > 99 ? '99+' : count;
+            elements.navBookmarkCount.style.display = 'inline-block';
+        } else {
+            elements.navBookmarkCount.style.display = 'none';
+        }
+        if (elements.bookmarksCountBadge) {
+            elements.bookmarksCountBadge.textContent = `${count} saved`;
+        }
+    },
+
+    isBookmarked(dramaUrl) {
+        const key = this.getDramaKey(dramaUrl);
+        return Boolean(key && this.data.bookmarks[key]);
+    },
+
+    toggleBookmark(drama) {
+        if (!drama || !drama.url || /^file:/i.test(drama.url)) return false;
+        const key = this.getDramaKey(drama.url);
+        if (!key) return false;
+
+        const isCurrentlySaved = Boolean(this.data.bookmarks[key]);
+        if (isCurrentlySaved) {
+            delete this.data.bookmarks[key];
+        } else {
+            const safePoster = (drama.poster && !/^file:/i.test(drama.poster)) ? drama.poster : '';
+            this.data.bookmarks[key] = {
+                id: key,
+                title: drama.title || 'Untitled Drama',
+                poster: safePoster,
+                url: drama.url,
+                tags: Array.isArray(drama.tags) ? drama.tags : [],
+                episodes: drama.episodes || (drama.episodeList ? drama.episodeList.length : 0),
+                savedAt: Date.now()
+            };
+        }
+        this.save();
+        return !isCurrentlySaved;
+    },
+
+    getBookmarksList() {
+        const list = Object.values(this.data.bookmarks || {});
+        return list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+    },
+
+    clearAllBookmarks() {
+        this.data.bookmarks = {};
+        this.save();
+    },
+
+    getDramaProgress(dramaUrl) {
+        const key = this.getDramaKey(dramaUrl);
+        if (!key || !this.data.progress[key]) {
+            return { lastWatchedEp: 1, lastWatchedAt: 0, watchedList: [] };
+        }
+        const prog = this.data.progress[key];
+        return {
+            lastWatchedEp: parseInt(prog.lastWatchedEp, 10) || 1,
+            lastWatchedAt: prog.lastWatchedAt || 0,
+            watchedList: Array.isArray(prog.watchedList) ? prog.watchedList : []
+        };
+    },
+
+    recordEpisodeWatched(drama, epNum) {
+        if (!drama || !drama.url) return;
+        const key = this.getDramaKey(drama.url);
+        if (!key) return;
+
+        const ep = parseInt(epNum, 10) || 1;
+        if (!this.data.progress[key]) {
+            this.data.progress[key] = {
+                lastWatchedEp: ep,
+                lastWatchedAt: Date.now(),
+                watchedList: [ep]
+            };
+        } else {
+            const prog = this.data.progress[key];
+            prog.lastWatchedEp = ep;
+            prog.lastWatchedAt = Date.now();
+            if (!prog.watchedList.includes(ep)) {
+                prog.watchedList.push(ep);
+                prog.watchedList.sort((a, b) => a - b);
+            }
+        }
+
+        // If this drama is bookmarked and we now know real episode count, sync it
+        if (this.data.bookmarks[key] && drama.episodes && drama.episodes > 0) {
+            this.data.bookmarks[key].episodes = drama.episodes;
+        }
+
+        this.save();
+    },
+
+    toggleEpisodeWatched(drama, epNum) {
+        if (!drama || !drama.url) return false;
+        const key = this.getDramaKey(drama.url);
+        if (!key) return false;
+
+        const ep = parseInt(epNum, 10) || 1;
+        if (!this.data.progress[key]) {
+            this.data.progress[key] = {
+                lastWatchedEp: ep,
+                lastWatchedAt: Date.now(),
+                watchedList: [ep]
+            };
+            this.save();
+            return true;
+        }
+
+        const prog = this.data.progress[key];
+        const idx = prog.watchedList.indexOf(ep);
+        let nowWatched = false;
+        if (idx >= 0) {
+            prog.watchedList.splice(idx, 1);
+            nowWatched = false;
+        } else {
+            prog.watchedList.push(ep);
+            prog.watchedList.sort((a, b) => a - b);
+            prog.lastWatchedEp = ep;
+            nowWatched = true;
+        }
+        prog.lastWatchedAt = Date.now();
+        this.save();
+        return nowWatched;
+    }
+};
+
 // Elements Cache
 const elements = {
     body: document.body,
     navBrand: getEl('nav-brand'),
+    navBookmarkBtn: getEl('nav-bookmark-btn'),
+    navBookmarkCount: getEl('nav-bookmark-count'),
     pwaInstallBtn: getEl('pwa-install-btn'),
     pwaGuideModal: getEl('pwa-guide-modal'),
     pwaGuideContent: getEl('pwa-guide-content'),
@@ -75,7 +260,15 @@ const elements = {
     errorState: getEl('error-state'),
     errorDesc: getEl('error-desc'),
     retryBtn: getEl('retry-btn'),
-    openPasteFromError: getEl('open-paste-from-error'),
+
+    // Bookmarks Section
+    bookmarksSection: getEl('bookmarks-section'),
+    bookmarksGrid: getEl('bookmarks-grid'),
+    bookmarksEmptyState: getEl('bookmarks-empty-state'),
+    bookmarksCountBadge: getEl('bookmarks-count-badge'),
+    bookmarksBackBtn: getEl('bookmarks-back-btn'),
+    bookmarksClearBtn: getEl('bookmarks-clear-btn'),
+    bookmarksExploreBtn: getEl('bookmarks-explore-btn'),
 
     // Quick View Modal
     quickViewModal: getEl('quick-view-modal'),
@@ -132,14 +325,6 @@ const elements = {
     sheetEpTotal: getEl('sheet-ep-total'),
     playerEpisodesStrip: getEl('player-episodes-strip'),
 
-    // Paste HTML Modal (Optional)
-    pasteModal: getEl('paste-modal'),
-    openPasteBtn: getEl('btn-open-paste'),
-    pasteCloseBtn: getEl('paste-close-btn'),
-    pasteCancelBtn: getEl('paste-cancel-btn'),
-    pasteSubmitBtn: getEl('paste-submit-btn'),
-    pasteTextarea: getEl('paste-textarea'),
-
     // Proxy Settings Modal (Optional)
     proxyModal: getEl('proxy-modal'),
     openProxyBtn: getEl('btn-open-proxy'),
@@ -155,15 +340,18 @@ const elements = {
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
+    UserDataManager.init();
     setupEventListeners();
     setupProxySettings();
     registerServiceWorker();
     setupPwaInstall();
 
-    // Check if URL has ?q= parameter
+    // Check if URL has #mylist or ?q= parameter
     const urlParams = new URLSearchParams(window.location.search);
     const initialQuery = urlParams.get('q');
-    if (initialQuery && initialQuery.trim()) {
+    if (window.location.hash === '#mylist' || urlParams.get('view') === 'mylist') {
+        setAppMode('bookmarks');
+    } else if (initialQuery && initialQuery.trim()) {
         if (elements.searchInput) {
             elements.searchInput.value = initialQuery.trim();
         }
@@ -175,6 +363,22 @@ document.addEventListener('DOMContentLoaded', () => {
         // Initial state: Pure minimalist homepage with ONLY logo and search bar
         setAppMode('home');
     }
+
+    // Browser back/forward navigation support
+    window.addEventListener('popstate', () => {
+        if (window.location.hash === '#mylist') {
+            setAppMode('bookmarks');
+        } else {
+            const currentParams = new URLSearchParams(window.location.search);
+            const q = currentParams.get('q');
+            if (q && q.trim()) {
+                if (elements.searchInput) elements.searchInput.value = q.trim();
+                triggerDynamicSearch(q.trim());
+            } else {
+                resetToHomePage();
+            }
+        }
+    });
 });
 
 // Event Listeners Setup
@@ -241,10 +445,6 @@ function setupEventListeners() {
                 triggerDynamicSearch(AppState.currentQuery, true);
             }
         });
-    }
-
-    if (elements.openPasteFromError) {
-        elements.openPasteFromError.addEventListener('click', () => openModal(elements.pasteModal));
     }
 
     // Modal Events - Quick View
@@ -332,20 +532,6 @@ function setupEventListeners() {
     setupReelGestures();
     setupVideoPlayerEvents();
 
-    // Modal Events - Paste HTML
-    if (elements.openPasteBtn) {
-        elements.openPasteBtn.addEventListener('click', () => openModal(elements.pasteModal));
-    }
-    if (elements.pasteCloseBtn) {
-        elements.pasteCloseBtn.addEventListener('click', () => closeModal(elements.pasteModal));
-    }
-    if (elements.pasteCancelBtn) {
-        elements.pasteCancelBtn.addEventListener('click', () => closeModal(elements.pasteModal));
-    }
-    if (elements.pasteSubmitBtn) {
-        elements.pasteSubmitBtn.addEventListener('click', handlePasteHtml);
-    }
-
     // Modal Events - Proxy Settings
     if (elements.openProxyBtn) {
         elements.openProxyBtn.addEventListener('click', () => openModal(elements.proxyModal));
@@ -361,6 +547,43 @@ function setupEventListeners() {
             if (elements.customProxyWrap) {
                 elements.customProxyWrap.style.display = elements.proxySelect.value === 'custom' ? 'block' : 'none';
             }
+        });
+    }
+
+    // My List Navigation & Actions
+    if (elements.navBookmarkBtn) {
+        elements.navBookmarkBtn.addEventListener('click', () => {
+            if (AppState.mode === 'bookmarks') {
+                resetToHomePage();
+            } else {
+                window.history.pushState({ page: 'mylist' }, '', '#mylist');
+                setAppMode('bookmarks');
+            }
+        });
+    }
+
+    if (elements.bookmarksBackBtn) {
+        elements.bookmarksBackBtn.addEventListener('click', () => {
+            resetToHomePage();
+        });
+    }
+
+    if (elements.bookmarksClearBtn) {
+        elements.bookmarksClearBtn.addEventListener('click', () => {
+            const list = UserDataManager.getBookmarksList();
+            if (list.length === 0) return;
+            if (confirm('Clear all saved reels from My List?')) {
+                UserDataManager.clearAllBookmarks();
+                renderBookmarksView();
+                showToast('Cleared My List');
+            }
+        });
+    }
+
+    if (elements.bookmarksExploreBtn) {
+        elements.bookmarksExploreBtn.addEventListener('click', () => {
+            resetToHomePage();
+            if (elements.searchInput) elements.searchInput.focus();
         });
     }
 
@@ -385,24 +608,98 @@ function setupEventListeners() {
         } else if (e.key === 'Escape') {
             closePlayer();
             closeQuickView();
-            closeModal(elements.pasteModal);
             closeModal(elements.proxyModal);
             closeModal(elements.pwaGuideModal);
+        } else if ((e.ctrlKey || e.metaKey) && (e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0')) {
+            e.preventDefault();
         }
     });
+
+    // Initialize native app zoom prevention (pinch, gesture, double-tap)
+    setupZoomPrevention();
 }
 
 /**
- * Switch View Mode: 'home' (only logo + search bar) vs 'results' (compact search + anime cards)
+ * Lock zoom scale to 1.0 (prevent pinch-to-zoom, Ctrl+Wheel zoom, and double-tap zoom)
+ * Keeps the PWA at a constant native app size across all devices
+ */
+function setupZoomPrevention() {
+    // Prevent iOS Safari gesture zoom (pinch/spread)
+    const preventGesture = (e) => e.preventDefault();
+    document.addEventListener('gesturestart', preventGesture, { passive: false });
+    document.addEventListener('gesturechange', preventGesture, { passive: false });
+    document.addEventListener('gestureend', preventGesture, { passive: false });
+
+    // Prevent Ctrl + Mousewheel / Ctrl + Trackpad zoom
+    window.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    // Prevent double-tap to zoom on mobile touchscreens (except inside input/textarea fields)
+    let lastTouchTime = 0;
+    document.addEventListener('touchend', (e) => {
+        const now = Date.now();
+        if (now - lastTouchTime <= 300) {
+            const tag = (e.target && e.target.tagName) ? e.target.tagName.toUpperCase() : '';
+            if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+                e.preventDefault();
+            }
+        }
+        lastTouchTime = now;
+    }, { passive: false });
+}
+
+/**
+ * Switch View Mode: 'home' | 'results' | 'bookmarks'
  */
 function setAppMode(mode) {
     AppState.mode = mode;
     if (elements.body) {
-        elements.body.className = mode === 'home' ? 'app-mode-home' : 'app-mode-results';
+        elements.body.className = `app-mode-${mode}`;
     }
     if (mode === 'home') {
         hideAllResults();
+        if (elements.heroSection) elements.heroSection.style.display = 'flex';
+        if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.remove('active');
+    } else if (mode === 'bookmarks') {
+        hideAllResults();
+        if (elements.heroSection) elements.heroSection.style.display = 'none';
+        if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'block';
+        if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.add('active');
+        renderBookmarksView();
+    } else if (mode === 'results') {
+        if (elements.heroSection) elements.heroSection.style.display = 'flex';
+        if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'none';
+        if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.remove('active');
     }
+}
+
+/**
+ * Render Bookmarks / Watch Later View ("My List")
+ */
+function renderBookmarksView() {
+    if (!elements.bookmarksGrid) return;
+    const bookmarks = UserDataManager.getBookmarksList();
+
+    if (elements.bookmarksCountBadge) {
+        elements.bookmarksCountBadge.textContent = `${bookmarks.length} ${bookmarks.length === 1 ? 'reel' : 'reels'}`;
+    }
+
+    if (bookmarks.length === 0) {
+        elements.bookmarksGrid.style.display = 'none';
+        if (elements.bookmarksEmptyState) elements.bookmarksEmptyState.style.display = 'block';
+        return;
+    }
+
+    if (elements.bookmarksEmptyState) elements.bookmarksEmptyState.style.display = 'none';
+    elements.bookmarksGrid.style.display = 'grid';
+
+    elements.bookmarksGrid.innerHTML = bookmarks.map((item, index) => createAnimeCardHtml(item, index, true)).join('');
+
+    // Attach card click handlers for bookmarks view
+    attachCardListeners(elements.bookmarksGrid, bookmarks, true);
 }
 
 /**
@@ -473,7 +770,7 @@ async function triggerDynamicSearch(query, bypassCache = false) {
         }
     } catch (err) {
         console.error('[Search Failed]:', err.message);
-        showError(`Could not fetch "${cleanQuery}" (${err.message}). Check CORS proxy settings or use "Paste HTML" below.`);
+        showError(`Could not fetch "${cleanQuery}" (${err.message}). Tap "Retry Search" to try again.`);
     }
 }
 
@@ -491,88 +788,156 @@ window.searchByKeyword = function(keyword) {
 };
 
 /**
- * FAST Multi-Tier Fetch Pipeline:
- * Priority 1: DIRECT FETCH (Direct browser fetch in ~350ms)
- * Priority 2: AllOrigins JSON GET (CORS fallback)
- * Priority 3: CodeTabs Proxy
+ * HIGH-AVAILABILITY MULTI-TIER PROXY ENGINE
+ * Designed for mobile networks and GitHub Pages cross-origin hosting
+ * Staggers requests to prevent single-proxy timeouts from blocking the app
  */
 async function fetchFastHtml(targetUrl) {
+    if (!targetUrl || typeof targetUrl !== 'string' || /^file:\/\//i.test(targetUrl) || /^file:/i.test(targetUrl)) {
+        throw new Error('Invalid URL or disallowed file protocol.');
+    }
+
     if (DetailCache.has(targetUrl)) {
         return { html: DetailCache.get(targetUrl), source: 'Cache' };
     }
 
     const method = AppState.proxyMethod || 'auto';
-    const pipeline = [];
 
-    // Custom Proxy if configured by user
+    // Helper to validate that a response is real drama HTML and not a proxy 502/522 error page
+    function isValidDramaHtml(text) {
+        if (!text || typeof text !== 'string' || text.length < 500) return false;
+        if (text.includes('502 Bad Gateway') || text.includes('522 Connection timed out') || text.includes('Cloudflare Ray ID')) {
+            return false;
+        }
+        return text.includes('<html') || text.includes('<body') || text.includes('<!DOCTYPE') || text.includes('drama');
+    }
+
+    // 1. User Custom Proxy
     if (AppState.customProxy && AppState.customProxy.trim()) {
         const customUrl = AppState.customProxy.replace('{url}', encodeURIComponent(targetUrl));
-        pipeline.push({
-            name: 'Custom Proxy',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(customUrl, { timeout: 6000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                return await res.text();
-            }
-        });
-    }
-
-    if (method === 'direct' || method === 'auto') {
-        // DIRECT FETCH FIRST! (Direct browser fetch in ~350ms)
-        pipeline.push({
-            name: 'Direct Fetch',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(targetUrl, { mode: 'cors', timeout: 5000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                return await res.text();
-            }
-        });
-    }
-
-    if (method === 'allorigins' || method === 'auto') {
-        // AllOrigins Fallback (3.5s timeout)
-        pipeline.push({
-            name: 'AllOrigins',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, { timeout: 4000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const data = await res.json();
-                if (!data || !data.contents) throw new Error('Empty response contents');
-                return data.contents;
-            }
-        });
-    }
-
-    if (method === 'codetabs' || method === 'auto') {
-        // CodeTabs Fallback (3.5s timeout)
-        pipeline.push({
-            name: 'CodeTabs',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 4000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                return await res.text();
-            }
-        });
-    }
-
-    let lastError = null;
-
-    for (const step of pipeline) {
         try {
-            const html = await step.fetcher();
-            if (html && html.length > 300) {
-                DetailCache.set(targetUrl, html);
-                return { html, source: step.name };
+            const res = await fetchWithTimeout(customUrl, { timeout: 12000 });
+            if (!res.ok) throw new Error(`Custom Proxy status ${res.status}`);
+            const text = await res.text();
+            if (isValidDramaHtml(text)) {
+                DetailCache.set(targetUrl, text);
+                return { html: text, source: 'Custom Proxy' };
             }
-        } catch (e) {
-            if (e.name !== 'AbortError') {
-                console.error(`[Fetch Failed] ${step.name}:`, e.message);
-            }
-            lastError = e;
+        } catch (err) {
+            console.warn('[Custom Proxy Error]:', err.message);
         }
     }
 
-    throw lastError || new Error('All fetch methods failed.');
+    // 2. Specific method selected by user
+    if (method === 'direct') {
+        const res = await fetchWithTimeout(targetUrl, { mode: 'cors', timeout: 8000 });
+        if (!res.ok) throw new Error(`Direct Fetch status ${res.status}`);
+        const text = await res.text();
+        DetailCache.set(targetUrl, text);
+        return { html: text, source: 'Direct Fetch' };
+    }
+
+    if (method === 'allorigins') {
+        const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
+        if (!res.ok) throw new Error(`AllOrigins status ${res.status}`);
+        const text = await res.text();
+        if (!isValidDramaHtml(text)) throw new Error('Invalid or empty response from AllOrigins');
+        DetailCache.set(targetUrl, text);
+        return { html: text, source: 'AllOrigins' };
+    }
+
+    if (method === 'codetabs') {
+        const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
+        if (!res.ok) throw new Error(`CodeTabs status ${res.status}`);
+        const text = await res.text();
+        if (!isValidDramaHtml(text)) throw new Error('Invalid or empty response from CodeTabs');
+        DetailCache.set(targetUrl, text);
+        return { html: text, source: 'CodeTabs' };
+    }
+
+    // 3. 'auto' mode: Intelligent Staggered Race across multiple proxies + direct fetch
+    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+    const candidates = [
+        // Candidate 1: AllOrigins Raw (direct raw streaming without JSON encoding overhead)
+        {
+            name: 'AllOrigins Raw',
+            fetcher: async () => {
+                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+                const text = await res.text();
+                if (!isValidDramaHtml(text)) throw new Error('Invalid or error payload');
+                return text;
+            }
+        },
+        // Candidate 2: CodeTabs Proxy
+        {
+            name: 'CodeTabs',
+            fetcher: async () => {
+                const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+                const text = await res.text();
+                if (!isValidDramaHtml(text)) throw new Error('Invalid or error payload');
+                return text;
+            }
+        },
+        // Candidate 3: Direct Fetch (instant on localhost or if browser permits CORS)
+        {
+            name: 'Direct Fetch',
+            fetcher: async () => {
+                const res = await fetchWithTimeout(targetUrl, { mode: 'cors', timeout: isLocalhost ? 5000 : 7000 });
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+                const text = await res.text();
+                if (!isValidDramaHtml(text)) throw new Error('Empty payload');
+                return text;
+            }
+        },
+        // Candidate 4: AllOrigins JSON GET (fallback)
+        {
+            name: 'AllOrigins GET',
+            fetcher: async () => {
+                const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
+                if (!res.ok) throw new Error(`Status ${res.status}`);
+                const data = await res.json();
+                if (!data || !data.contents || !isValidDramaHtml(data.contents)) throw new Error('Empty JSON contents');
+                return data.contents;
+            }
+        }
+    ];
+
+    // If on localhost, try direct fetch first
+    if (isLocalhost) {
+        candidates.unshift(candidates.splice(2, 1)[0]);
+    }
+
+    // Staggered execution: starts candidate 0 immediately, candidate 1 at 1200ms, candidate 2 at 2400ms...
+    // The FIRST candidate that completes with valid drama HTML wins immediately!
+    return new Promise((resolve, reject) => {
+        let isResolved = false;
+        let errors = [];
+
+        candidates.forEach((cand, index) => {
+            const delay = index === 0 ? 0 : (index * 1200);
+
+            setTimeout(async () => {
+                if (isResolved) return;
+                try {
+                    const text = await cand.fetcher();
+                    if (!isResolved) {
+                        isResolved = true;
+                        DetailCache.set(targetUrl, text);
+                        resolve({ html: text, source: cand.name });
+                    }
+                } catch (err) {
+                    errors.push(`${cand.name}: ${err.message}`);
+                    if (errors.length === candidates.length && !isResolved) {
+                        isResolved = true;
+                        reject(new Error(errors.join(' | ')));
+                    }
+                }
+            }, delay);
+        });
+    });
 }
 
 /**
@@ -605,37 +970,65 @@ function renderAnimeCards(items, queryText = '') {
     }
 
     if (elements.animeGrid) {
-        elements.animeGrid.innerHTML = items.map((item, index) => createAnimeCardHtml(item, index)).join('');
+        elements.animeGrid.innerHTML = items.map((item, index) => createAnimeCardHtml(item, index, false)).join('');
     }
 
-    // Attach click handlers
-    items.forEach((item, index) => {
-        const cardEl = document.getElementById(`anime-card-${index}`);
-        if (cardEl) {
-            // Click to open quick view, or click play circle to play Episode 1 directly
-            cardEl.addEventListener('click', (e) => {
-                if (e.target.closest('.btn-play-circle')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const ep1Url = (item.episodeList && item.episodeList[0]) 
-                        ? item.episodeList[0].url 
-                        : getEpisodeWatchUrl(item.url, 1);
-                    playEpisode(item, 1, ep1Url);
-                    return;
-                }
-                openQuickView(item, cardEl);
-            });
+    // Attach click & bookmark handlers
+    attachCardListeners(elements.animeGrid, items, false);
+}
 
-            // Image load fallback with anime initials
-            const imgEl = cardEl.querySelector('.card-poster');
-            if (imgEl) {
-                imgEl.addEventListener('error', () => {
-                    const fallbackEl = document.createElement('div');
-                    fallbackEl.className = 'card-poster-fallback';
-                    fallbackEl.textContent = getInitials(item.title);
-                    imgEl.replaceWith(fallbackEl);
-                });
+/**
+ * Shared card event listeners for search grid and bookmarks grid
+ */
+function attachCardListeners(containerEl, items, isBookmarkView = false) {
+    if (!containerEl) return;
+    items.forEach((item, index) => {
+        const cardId = isBookmarkView ? `bookmark-card-${index}` : `anime-card-${index}`;
+        const cardEl = containerEl.querySelector(`#${cardId}`);
+        if (!cardEl) return;
+
+        // Card Click Handler
+        cardEl.addEventListener('click', (e) => {
+            // Check if bookmark toggle button clicked
+            const bookmarkBtn = e.target.closest('.card-bookmark-btn');
+            if (bookmarkBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                const nowSaved = UserDataManager.toggleBookmark(item);
+                if (isBookmarkView) {
+                    showToast(`Removed "${item.title}" from Saved`);
+                    renderBookmarksView();
+                } else {
+                    bookmarkBtn.classList.toggle('is-saved', nowSaved);
+                    const iconEl = bookmarkBtn.querySelector('.bookmark-icon');
+                    const textEl = bookmarkBtn.querySelector('.bookmark-text');
+                    if (iconEl) iconEl.textContent = nowSaved ? '✓' : '+';
+                    if (textEl) textEl.textContent = nowSaved ? 'Saved' : 'Save';
+                    bookmarkBtn.title = nowSaved ? 'Remove from Saved' : 'Add to Watch Later';
+                    showToast(nowSaved ? `Saved "${item.title}" to Watch Later` : `Removed "${item.title}" from Saved`);
+                }
+                return;
             }
+
+            // Tapping anywhere on the card launches the reel player directly at last watched episode!
+            const prog = UserDataManager.getDramaProgress(item.url);
+            const targetEp = (prog.lastWatchedEp && prog.lastWatchedEp > 0) ? prog.lastWatchedEp : 1;
+            const epUrl = (item.episodeList && item.episodeList[targetEp - 1]) 
+                ? item.episodeList[targetEp - 1].url 
+                : getEpisodeWatchUrl(item.url, targetEp);
+
+            playEpisode(item, targetEp, epUrl);
+        });
+
+        // Image load fallback with anime initials
+        const imgEl = cardEl.querySelector('.card-poster');
+        if (imgEl) {
+            imgEl.addEventListener('error', () => {
+                const fallbackEl = document.createElement('div');
+                fallbackEl.className = 'card-poster-fallback';
+                fallbackEl.textContent = getInitials(item.title);
+                imgEl.replaceWith(fallbackEl);
+            });
         }
     });
 }
@@ -717,32 +1110,50 @@ function updateCardEpisodeBadge(index, count) {
 /**
  * Generate HTML for an Anime Card
  */
-function createAnimeCardHtml(item, index) {
+function createAnimeCardHtml(item, index, isBookmarkView = false) {
     const title = escapeHtml(item.title || 'Untitled Drama');
     const poster = item.poster || '';
     const hasEpisodes = (item.episodes && item.episodes > 0) || (item.episodeList && item.episodeList.length > 0);
     const episodeTotalText = getEpisodeTotalText(item);
     const badgeClass = hasEpisodes ? 'card-badge-top-left' : 'card-badge-top-left badge-resolving';
     const typeBadge = (item.tags && item.tags.some(t => /dub/i.test(t))) ? 'DUB' : 'SUB';
-    const watchUrl = item.url || '#';
     const tagsHtml = (item.tags || []).slice(0, 3).map(tag => 
         `<span class="card-tag">#${escapeHtml(tag)}</span>`
     ).join('');
+
+    // Bookmarking & Episode Tracking state
+    const isSaved = UserDataManager.isBookmarked(item.url);
+    const prog = UserDataManager.getDramaProgress(item.url);
+    const watchedCount = prog.watchedList.length;
+    const totalEps = (item.episodes && item.episodes > 0) ? item.episodes : (item.episodeList ? item.episodeList.length : 0);
+    const progressPct = totalEps > 0 ? Math.min(100, Math.round((watchedCount / totalEps) * 100)) : 0;
+
+    const progressBarMarkup = watchedCount > 0 
+        ? `<div class="card-progress-bar-wrap"><div class="card-progress-bar-fill" style="width: ${progressPct}%"></div></div>`
+        : '';
+
+    let footerLabel = 'HD Quality';
+    if (watchedCount > 0) {
+        footerLabel = totalEps > 0 ? `Watched ${watchedCount}/${totalEps} eps` : `Watched ${watchedCount} eps`;
+    } else if (totalEps > 0) {
+        footerLabel = `${totalEps} Episodes`;
+    }
+    const progressClass = watchedCount > 0 ? 'card-progress-text has-progress' : 'card-progress-text';
 
     const posterMarkup = poster 
         ? `<img class="card-poster" src="${escapeHtml(poster)}" alt="${title}" loading="lazy" referrerpolicy="no-referrer">`
         : `<div class="card-poster-fallback">${getInitials(title)}</div>`;
 
+    const cardId = isBookmarkView ? `bookmark-card-${index}` : `anime-card-${index}`;
+
     return `
-        <article class="anime-card" id="anime-card-${index}" tabindex="0" role="button" aria-label="${title}">
+        <article class="anime-card" id="${cardId}" tabindex="0" role="button" aria-label="${title}">
             <div class="card-poster-wrap">
                 <span class="${badgeClass}" id="card-ep-badge-${index}">🎬 ${escapeHtml(episodeTotalText)}</span>
                 <span class="card-badge-top-right">${typeBadge}</span>
                 ${posterMarkup}
                 <div class="poster-gradient"></div>
-                <div class="card-overlay-actions">
-                    <button class="btn-play-circle" type="button" title="Play Episode 1">▶</button>
-                </div>
+                ${progressBarMarkup}
             </div>
             <div class="card-body">
                 <h3 class="card-title" title="${title}">${title}</h3>
@@ -750,9 +1161,10 @@ function createAnimeCardHtml(item, index) {
                     ${tagsHtml}
                 </div>
                 <div class="card-footer-action">
-                    <span class="card-provider-text">HD Quality</span>
-                    <button class="card-episodes-btn" type="button" title="View all episodes">
-                        <span>📑</span> View Episodes
+                    <span class="${progressClass}">${escapeHtml(footerLabel)}</span>
+                    <button class="card-bookmark-btn ${isSaved ? 'is-saved' : ''}" type="button" title="${isSaved ? 'Remove from Saved' : 'Add to Watch Later'}">
+                        <span class="bookmark-icon">${isSaved ? '✓' : '+'}</span>
+                        <span class="bookmark-text">${isSaved ? 'Saved' : 'Save'}</span>
                     </button>
                 </div>
             </div>
@@ -855,10 +1267,13 @@ function renderEpisodesList(episodeList, count) {
     if (elements.quickViewEpisodesLoading) elements.quickViewEpisodesLoading.style.display = 'none';
     if (elements.quickViewEpisodesCount) elements.quickViewEpisodesCount.textContent = `(${count || episodeList.length})`;
 
+    const prog = UserDataManager.getDramaProgress(AppState.selectedDrama?.url);
     const html = episodeList.map((ep, idx) => {
         const epNum = typeof ep.number === 'number' ? ep.number : (idx + 1);
         const epLabel = typeof ep.number === 'string' && ep.number.toUpperCase().startsWith('EP') ? ep.number : `EP ${epNum}`;
-        return `<button class="episode-btn" type="button" data-ep-index="${idx}" data-ep-num="${epNum}" data-ep-url="${escapeHtml(ep.url)}">${escapeHtml(epLabel)}</button>`;
+        const isWatched = prog.watchedList.includes(epNum);
+        const watchedClass = isWatched ? ' watched' : '';
+        return `<button class="episode-btn${watchedClass}" type="button" data-ep-index="${idx}" data-ep-num="${epNum}" data-ep-url="${escapeHtml(ep.url)}" title="${isWatched ? `Episode ${epNum} (Watched)` : `Episode ${epNum}`}">${escapeHtml(epLabel)}${isWatched ? ' ✓' : ''}</button>`;
     }).join('');
 
     if (elements.quickViewEpisodesGrid) {
@@ -951,7 +1366,12 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
             const activeEp = cached.episodes.find(e => Number(e.number) === epNum);
             if (activeEp && activeEp.playUrl) {
-                loadStreamInVideo(activeEp.playUrl, activeEp.isHls);
+                if (activeEp.exp && (activeEp.exp * 1000) < Date.now()) {
+                    closePlayer();
+                    showToast('This episode is not available at this moment');
+                    return;
+                }
+                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp);
                 return;
             }
         }
@@ -969,34 +1389,147 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
             const activeEp = streamData.episodes.find(e => Number(e.number) === epNum);
             const targetUrl = (activeEp && activeEp.playUrl) || streamData.streamUrl;
+            const targetKey = (activeEp && activeEp.key) || streamData.key || null;
+            const targetExp = (activeEp && activeEp.exp) || streamData.exp || null;
+
+            if (targetExp && (targetExp * 1000) < Date.now()) {
+                closePlayer();
+                showToast('This episode is not available at this moment');
+                return;
+            }
 
             if (targetUrl) {
-                loadStreamInVideo(targetUrl, streamData.isHls);
+                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp);
                 return;
             }
         } else if (streamData.streamUrl) {
-            loadStreamInVideo(streamData.streamUrl, streamData.isHls);
+            if (streamData.exp && (streamData.exp * 1000) < Date.now()) {
+                closePlayer();
+                showToast('This episode is not available at this moment');
+                return;
+            }
+            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp);
             return;
         }
 
         // Stream URL could not be found
         showPlayerError('Video stream could not be extracted from this episode.');
     } catch (err) {
+        if (err && (err.status === 410 || /410/.test(err.message))) {
+            closePlayer();
+            showToast('This episode is not available at this moment');
+            return;
+        }
         console.error('[Stream Fetch Failed]:', err.message);
         showPlayerError(`Could not load episode stream (${err.message}). Tap Retry to try again.`);
     }
 }
 
 /**
+ * Custom Hls.js loader that resolves local/offline encryption keys in-memory
+ * and strips/rewrites local: and file: URI references to avoid browser security errors
+ */
+function createReelHlsLoaderClass() {
+    if (typeof Hls === 'undefined' || !Hls.DefaultConfig || !Hls.DefaultConfig.loader) {
+        return null;
+    }
+
+    return class ReelHlsLoader extends Hls.DefaultConfig.loader {
+        load(context, config, callbacks) {
+            // 1. Intercept decryption key requests (context.type === 'key')
+            if (context.type === 'key') {
+                const url = context.url || '';
+                if (url.startsWith('local:') || url.startsWith('file:') || url.includes('offline-key') || url.startsWith('data:application/octet-stream;base64,')) {
+                    let keyBase64 = PlayerState.currentStreamKey;
+                    if (url.startsWith('data:application/octet-stream;base64,')) {
+                        keyBase64 = url.split(',')[1];
+                    }
+                    if (keyBase64) {
+                        try {
+                            const binary = atob(keyBase64);
+                            const bytes = new Uint8Array(binary.length);
+                            for (let i = 0; i < binary.length; i++) {
+                                bytes[i] = binary.charCodeAt(i);
+                            }
+                            callbacks.onSuccess({
+                                data: bytes.buffer
+                            }, {
+                                url: context.url
+                            }, context);
+                            return;
+                        } catch (e) {
+                            console.warn('[ReelHlsLoader] Failed to decode base64 key:', e);
+                        }
+                    }
+                }
+            }
+
+            // 2. Intercept manifest & level playlists to rewrite local: or file: key URIs
+            if (context.type === 'manifest' || context.type === 'level') {
+                const origSuccess = callbacks.onSuccess;
+                callbacks.onSuccess = function(response, stats, ctx, networkDetails) {
+                    if (response && typeof response.data === 'string' && PlayerState.currentStreamKey) {
+                        const dataUri = `data:application/octet-stream;base64,${PlayerState.currentStreamKey}`;
+                        response.data = response.data.replace(/URI=["'](?:local|file):\/\/[^"']+["']/g, `URI="${dataUri}"`);
+                    }
+                    origSuccess.call(this, response, stats, ctx, networkDetails);
+                };
+            }
+
+            super.load(context, config, callbacks);
+        }
+    };
+}
+
+/**
+ * Attempt video playback with mobile autoplay policy fallback (auto-mute if unmuted autoplay blocked)
+ */
+function attemptAutoplay(videoEl) {
+    if (!videoEl) return;
+    const playPromise = videoEl.play();
+    if (playPromise !== undefined) {
+        playPromise.catch(async (playErr) => {
+            if (playErr && playErr.name === 'NotAllowedError') {
+                videoEl.muted = true;
+                PlayerState.isMuted = true;
+                if (elements.playerMuteIcon) elements.playerMuteIcon.textContent = '🔇';
+                if (elements.playerMuteLabel) elements.playerMuteLabel.textContent = 'Muted';
+                try {
+                    await videoEl.play();
+                } catch (_) {}
+            }
+        });
+    }
+}
+
+/**
  * Load and play a stream URL (.m3u8 or .mp4) in HTML5 video using adaptive Hls.js
  */
-function loadStreamInVideo(streamUrl, isHlsHint = false) {
+function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null) {
     if (!streamUrl) {
         showPlayerError('No video stream URL found for this episode.');
         return;
     }
 
+    // Unwrap embedded token if present
+    if (typeof DramaParser !== 'undefined' && DramaParser.unwrapStreamUrl) {
+        const unwrapped = DramaParser.unwrapStreamUrl(streamUrl);
+        streamUrl = unwrapped.streamUrl;
+        if (!streamKey && unwrapped.key) streamKey = unwrapped.key;
+        if (!streamExp && unwrapped.exp) streamExp = unwrapped.exp;
+    }
+
+    // Check expiration timestamp for 410 Gone
+    if (streamExp && (streamExp * 1000) < Date.now()) {
+        closePlayer();
+        showToast('This episode is not available at this moment');
+        return;
+    }
+
     PlayerState.currentStreamUrl = streamUrl;
+    PlayerState.currentStreamKey = streamKey;
+    PlayerState.currentStreamExp = streamExp;
+
     const videoEl = elements.playerVideoElement;
     if (!videoEl) return;
 
@@ -1038,9 +1571,9 @@ function loadStreamInVideo(streamUrl, isHlsHint = false) {
     }
 
     // Adaptive playback strategy:
-    // On modern browsers (Chrome/Firefox/Edge), almost all drama streams are HLS, so route through Hls.js
+    // On modern browsers (Chrome/Firefox/Edge/Samsung Internet), almost all drama streams are HLS, so route through Hls.js
     if (isHls && window.Hls && Hls.isSupported()) {
-        loadWithHlsJs(streamUrl, videoEl);
+        loadWithHlsJs(streamUrl, videoEl, false, streamKey, streamExp);
     } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
         // Native HLS for Safari on iOS / macOS
         loadNativeVideo(streamUrl, videoEl, true);
@@ -1051,18 +1584,35 @@ function loadStreamInVideo(streamUrl, isHlsHint = false) {
 }
 
 /**
- * Robust Hls.js stream loader with automatic proxy fallback
+ * Robust Hls.js stream loader with automatic proxy fallback and 410 Gone detection
  */
-function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false) {
-    const hls = new Hls({
-        enableWorker: true,
+function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = null, streamExp = null) {
+    if (streamKey) PlayerState.currentStreamKey = streamKey;
+    if (streamExp) PlayerState.currentStreamExp = streamExp;
+
+    if (!PlayerState.currentStreamKey && typeof DramaParser !== 'undefined' && DramaParser.unwrapStreamUrl) {
+        const unwrapped = DramaParser.unwrapStreamUrl(streamUrl);
+        if (unwrapped.key) PlayerState.currentStreamKey = unwrapped.key;
+        if (unwrapped.exp) PlayerState.currentStreamExp = unwrapped.exp;
+    }
+
+    const LoaderClass = createReelHlsLoaderClass();
+    const hlsConfig = {
+        enableWorker: Boolean(window.Worker),
         lowLatencyMode: false,
-        backBufferLength: 90,
-        maxBufferLength: 60,
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        maxBufferSize: 30 * 1000 * 1000,
         xhrSetup: (xhr) => {
             xhr.withCredentials = false;
         }
-    });
+    };
+    if (LoaderClass) {
+        hlsConfig.loader = LoaderClass;
+    }
+
+    const hls = new Hls(hlsConfig);
     PlayerState.hls = hls;
 
     hls.loadSource(streamUrl);
@@ -1070,11 +1620,22 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false) {
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
         if (elements.playerBuffering) elements.playerBuffering.style.display = 'none';
-        videoEl.play().catch(() => {});
+        attemptAutoplay(videoEl);
     });
 
     let networkRetryCount = 0;
     hls.on(Hls.Events.ERROR, (event, data) => {
+        const statusCode = data.response?.code || data.response?.status || data.context?.xhr?.status;
+
+        // Immediate HTTP 410 detection: close player and inform user
+        if (statusCode === 410) {
+            hls.destroy();
+            PlayerState.hls = null;
+            closePlayer();
+            showToast('This episode is not available at this moment');
+            return;
+        }
+
         if (!data.fatal) return;
 
         switch (data.type) {
@@ -1086,7 +1647,7 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false) {
                     // Direct manifest fetch failed due to CORS/network, retry via raw proxy
                     hls.destroy();
                     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(streamUrl)}`;
-                    loadWithHlsJs(proxyUrl, videoEl, true);
+                    loadWithHlsJs(proxyUrl, videoEl, true, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
                 } else {
                     hls.destroy();
                     loadNativeVideo(streamUrl, videoEl, false);
@@ -1105,14 +1666,25 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false) {
 }
 
 /**
- * Native video playback with format recovery
+ * Native video playback with format recovery and 410 detection
  */
 function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
-    videoEl.onerror = () => {
+    videoEl.onerror = async () => {
         const err = videoEl.error;
+
+        // 1. Probe for HTTP 410 status code
+        try {
+            const probe = await fetchWithTimeout(streamUrl, { method: 'HEAD', timeout: 3500 });
+            if (probe.status === 410) {
+                closePlayer();
+                showToast('This episode is not available at this moment');
+                return;
+            }
+        } catch (_) {}
+
         // If native video failed on Chrome/Firefox because it's an HLS stream passed to <video src>:
         if (err && err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && window.Hls && Hls.isSupported() && !PlayerState.hls) {
-            loadWithHlsJs(streamUrl, videoEl);
+            loadWithHlsJs(streamUrl, videoEl, false, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
             return;
         }
 
@@ -1120,7 +1692,7 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
         if (PlayerState.episodes && PlayerState.episodes.length > 0) {
             const activeEp = PlayerState.episodes.find(e => Number(e.number) === PlayerState.currentEpisodeNumber);
             if (activeEp && activeEp.directPlayUrl && activeEp.directPlayUrl !== streamUrl) {
-                loadStreamInVideo(activeEp.directPlayUrl);
+                loadStreamInVideo(activeEp.directPlayUrl, activeEp.isHls, activeEp.key, activeEp.exp);
                 return;
             }
         }
@@ -1137,7 +1709,7 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
     videoEl.src = streamUrl;
     videoEl.addEventListener('loadedmetadata', () => {
         if (elements.playerBuffering) elements.playerBuffering.style.display = 'none';
-        videoEl.play().catch(() => {});
+        attemptAutoplay(videoEl);
     }, { once: true });
 }
 
@@ -1181,6 +1753,15 @@ function setupVideoPlayerEvents() {
         if (elements.playerBuffering) elements.playerBuffering.style.display = 'none';
         if (elements.playerErrorOverlay) elements.playerErrorOverlay.style.display = 'none';
         PlayerState.isPlaying = true;
+
+        // Record episode as watched in local storage
+        if (PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
+            UserDataManager.recordEpisodeWatched(PlayerState.currentDrama, PlayerState.currentEpisodeNumber);
+            if (elements.playerEpisodesStrip) {
+                const btn = elements.playerEpisodesStrip.querySelector(`.sheet-ep-btn[data-ep="${PlayerState.currentEpisodeNumber}"]`);
+                if (btn) btn.classList.add('watched');
+            }
+        }
     };
 
     videoEl.onpause = () => {
@@ -1188,7 +1769,10 @@ function setupVideoPlayerEvents() {
     };
 
     videoEl.onended = () => {
-        // Auto-advance to next episode when current finishes
+        // Record finished episode as watched and advance
+        if (PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
+            UserDataManager.recordEpisodeWatched(PlayerState.currentDrama, PlayerState.currentEpisodeNumber);
+        }
         playNextEpisode();
     };
 }
@@ -1436,11 +2020,17 @@ function renderEpisodesSheet(episodes, activeEpisodeNum) {
         elements.sheetEpTotal.textContent = `(${total})`;
     }
 
+    const prog = UserDataManager.getDramaProgress(PlayerState.currentDrama?.url);
     const pills = [];
     for (let i = 1; i <= total; i++) {
         const isActive = i === Number(activeEpisodeNum);
+        const isWatched = prog.watchedList.includes(i);
+        const classes = ['sheet-ep-btn'];
+        if (isActive) classes.push('active');
+        if (isWatched) classes.push('watched');
+
         pills.push(`
-            <button class="sheet-ep-btn ${isActive ? 'active' : ''}" type="button" data-ep="${i}">
+            <button class="${classes.join(' ')}" type="button" data-ep="${i}" title="${isWatched ? `Episode ${i} (Watched)` : `Episode ${i}`}">
                 EP ${i}
             </button>
         `);
@@ -1456,6 +2046,17 @@ function renderEpisodesSheet(episodes, activeEpisodeNum) {
                 closeEpisodesSheet();
                 const epUrl = getEpisodeWatchUrl(PlayerState.currentDrama.url, ep);
                 playEpisode(PlayerState.currentDrama, ep, epUrl);
+            }
+        });
+
+        // Context menu / long-press: Allow manual toggle of watched status
+        btn.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            const ep = parseInt(btn.getAttribute('data-ep'), 10);
+            if (ep && PlayerState.currentDrama) {
+                const nowWatched = UserDataManager.toggleEpisodeWatched(PlayerState.currentDrama, ep);
+                btn.classList.toggle('watched', nowWatched);
+                showToast(nowWatched ? `Marked EP ${ep} as watched` : `Marked EP ${ep} as unwatched`);
             }
         });
     });
@@ -1546,33 +2147,7 @@ function formatTime(sec) {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
-/**
- * Handle manual HTML paste for local testing or custom inspection
- */
-function handlePasteHtml() {
-    if (!elements.pasteTextarea) return;
-    const rawHtml = elements.pasteTextarea.value.trim();
-    if (!rawHtml) {
-        showToast('Please paste valid HTML before submitting.');
-        return;
-    }
 
-    try {
-        const parsed = DramaParser.parse(rawHtml, 'https://narto-drama.com');
-        closeModal(elements.pasteModal);
-        setAppMode('results');
-
-        if (parsed.items && parsed.items.length > 0) {
-            AppState.results = parsed.items;
-            renderAnimeCards(parsed.items, 'Pasted HTML Inspection');
-            showToast(`Extracted ${parsed.items.length} dramas dynamically!`);
-        } else {
-            showToast('No drama cards found in pasted HTML.');
-        }
-    } catch (e) {
-        showToast('Parse error: ' + e.message);
-    }
-}
 
 /**
  * Sorting logic
@@ -1645,6 +2220,7 @@ function hideAllResults() {
     if (elements.emptyState) elements.emptyState.style.display = 'none';
     if (elements.errorState) elements.errorState.style.display = 'none';
     if (elements.contentContainer) elements.contentContainer.style.display = 'none';
+    if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'none';
 }
 
 function openModal(modal) {
@@ -1676,9 +2252,15 @@ function showToast(message) {
  * Fetch with custom timeout
  */
 function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 5000 } = options;
+    const { timeout = 12000 } = options;
     const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
+    const id = setTimeout(() => {
+        try {
+            controller.abort(new Error(`Timed out after ${Math.round(timeout / 1000)}s`));
+        } catch (_) {
+            controller.abort();
+        }
+    }, timeout);
 
     return fetch(resource, {
         ...options,

@@ -433,6 +433,10 @@ const DramaParser = (() => {
     function resolveUrl(url, baseUrl) {
         if (!url) return '';
         const trimmed = url.trim();
+        // Disallow local file schemes to eliminate file:/// security errors
+        if (/^file:\/\//i.test(trimmed) || /^file:/i.test(trimmed)) {
+            return '';
+        }
         if (trimmed.startsWith('//')) {
             return 'https:' + trimmed;
         }
@@ -476,11 +480,65 @@ const DramaParser = (() => {
     }
 
     /**
+     * Unwraps stream URLs that contain embedded base64/JWT tokens (e.g. stream-e1.narto-drama.com/e/m/...)
+     * Extracts direct Akamai/CDN source, AES-128 key (gsk), expiration timestamp, and provider
+     */
+    function unwrapStreamUrl(url) {
+        if (!url || typeof url !== 'string') {
+            return { streamUrl: '', directSrc: '', key: null, exp: null, provider: null, originalUrl: '' };
+        }
+        const clean = cleanJsonUrl(url);
+
+        // Pattern 1: /e/m/<token>.<sig> or /e/m/<token>
+        // Pattern 2: ?token=<token> or ?data=<token> or ?m=<token>
+        // Pattern 3: any base64 string starting with eyJ (which is '{"' in base64 JSON)
+        const tokenMatch = clean.match(/\/e\/m\/([a-zA-Z0-9_-]+)/i)
+            || clean.match(/[?&](?:token|m|jwt|data)=([a-zA-Z0-9_-]+)/i)
+            || clean.match(/\b(eyJ[a-zA-Z0-9_-]{15,})/);
+
+        if (tokenMatch && tokenMatch[1]) {
+            try {
+                let base64 = tokenMatch[1].replace(/-/g, '+').replace(/_/g, '/');
+                while (base64.length % 4 !== 0) {
+                    base64 += '=';
+                }
+                const decodedStr = typeof atob === 'function'
+                    ? atob(base64)
+                    : Buffer.from(base64, 'base64').toString('utf8');
+                const payload = JSON.parse(decodedStr);
+
+                if (payload && payload.src && typeof payload.src === 'string') {
+                    const directSrc = cleanJsonUrl(payload.src);
+                    return {
+                        streamUrl: directSrc,
+                        directSrc: directSrc,
+                        key: payload.gsk || payload.key || null,
+                        exp: payload.exp || null,
+                        provider: payload.prov || payload.provider || null,
+                        originalUrl: clean
+                    };
+                }
+            } catch (_) {
+                // Ignore base64 / JSON decode errors
+            }
+        }
+
+        return {
+            streamUrl: clean,
+            directSrc: clean,
+            key: null,
+            exp: null,
+            provider: null,
+            originalUrl: clean
+        };
+    }
+
+    /**
      * Extract streaming video data (m3u8, mp4, episode list) from an episode watch page HTML
      */
     function extractStreamData(htmlString, pageUrl = '') {
         if (!htmlString || typeof htmlString !== 'string') {
-            return { streamUrl: '', isHls: false, episodes: [], currentEpisode: 1, title: '' };
+            return { streamUrl: '', isHls: false, episodes: [], currentEpisode: 1, title: '', key: null, exp: null };
         }
 
         let streamUrl = '';
@@ -519,8 +577,10 @@ const DramaParser = (() => {
                 if (Array.isArray(parsed)) {
                     episodes = parsed.map(item => {
                         const epNum = item.route_episode_number || item.number || 1;
-                        const epPlayUrl = cleanJsonUrl(item.play_url || item.direct_play_url || item.stream_url || '');
-                        const epDirectUrl = cleanJsonUrl(item.direct_play_url || '');
+                        const rawPlayUrl = cleanJsonUrl(item.play_url || item.direct_play_url || item.stream_url || '');
+                        const unwrappedEp = unwrapStreamUrl(rawPlayUrl);
+                        const epPlayUrl = unwrappedEp.streamUrl;
+                        const epDirectUrl = item.direct_play_url ? unwrapStreamUrl(cleanJsonUrl(item.direct_play_url)).streamUrl : epPlayUrl;
                         const epThumb = cleanJsonUrl(item.thumb_url || '');
                         const epSub = cleanJsonUrl(item.subtitle_url || '');
                         const isHls = (item.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(epPlayUrl) || /\.m3u8(?:\?|$)/i.test(epDirectUrl);
@@ -529,6 +589,8 @@ const DramaParser = (() => {
                             title: item.title ? cleanText(item.title) : `Episode ${epNum}`,
                             playUrl: epPlayUrl || epDirectUrl,
                             directPlayUrl: epDirectUrl,
+                            key: unwrappedEp.key,
+                            exp: unwrappedEp.exp,
                             subtitleUrl: epSub,
                             thumbUrl: epThumb,
                             isHls
@@ -572,11 +634,19 @@ const DramaParser = (() => {
             }
         }
 
+        const unwrappedMain = unwrapStreamUrl(streamUrl);
+        streamUrl = unwrappedMain.streamUrl;
+        const streamKey = unwrappedMain.key;
+        const streamExp = unwrappedMain.exp;
+
         const isHls = /\.m3u8(?:\?|$)/i.test(streamUrl);
 
         return {
             title,
             streamUrl,
+            directSrc: streamUrl,
+            key: streamKey,
+            exp: streamExp,
             isHls,
             currentEpisode,
             episodes
@@ -587,6 +657,7 @@ const DramaParser = (() => {
         parse,
         parseEpisodesFromDetailPage,
         extractStreamData,
+        unwrapStreamUrl,
         cleanText,
         cleanDescription,
         cleanJsonUrl,

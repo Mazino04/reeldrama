@@ -36,19 +36,35 @@
     padding: 0;
 }
 
+html {
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+
 body {
     background-color: var(--bg-dark);
     color: var(--text-primary);
     font-family: var(--font-main);
     line-height: 1.5;
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     overflow-x: hidden;
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overscroll-behavior-y: none;
     background-image: 
         radial-gradient(ellipse at 50% 20%, rgba(255, 77, 109, 0.07) 0%, transparent 50%),
         radial-gradient(ellipse at 80% 80%, rgba(0, 242, 254, 0.05) 0%, transparent 50%);
     background-attachment: fixed;
+}
+
+button, a, input, select, textarea, .reel-player-container, .reel-gesture-layer {
+    touch-action: manipulation;
 }
 
 /* ==========================================================================
@@ -136,6 +152,42 @@ body {
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
     border-color: rgba(255, 255, 255, 0.2);
+}
+
+.nav-bookmark-btn {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: var(--transition-smooth);
+    position: relative;
+    touch-action: manipulation;
+}
+
+.nav-bookmark-btn:hover, .nav-bookmark-btn.active {
+    background: rgba(255, 77, 109, 0.22);
+    border-color: rgba(255, 77, 109, 0.55);
+    box-shadow: 0 4px 14px rgba(255, 77, 109, 0.35);
+    transform: translateY(-1px);
+}
+
+.nav-bookmark-btn .bookmark-badge {
+    background: var(--gradient-primary);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 1px 6px;
+    border-radius: var(--radius-pill);
+    min-width: 18px;
+    text-align: center;
+    box-shadow: 0 2px 8px var(--accent-pink-glow);
 }
 
 .nav-install-btn {
@@ -584,56 +636,41 @@ body.app-mode-home .content-container {
     box-shadow: 0 2px 8px var(--accent-pink-glow);
 }
 
-/* Card Hover Play Overlay */
-.card-overlay-actions {
+/* Card Mini Progress Bar */
+.card-progress-bar-wrap {
     position: absolute;
-    inset: 0;
-    background: rgba(8, 11, 19, 0.5);
-    backdrop-filter: blur(3px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: var(--transition-smooth);
-    z-index: 5;
-    pointer-events: none;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    z-index: 4;
+    overflow: hidden;
 }
 
-.anime-card:hover .card-overlay-actions {
-    opacity: 1;
+.card-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-pink), var(--accent-cyan));
+    box-shadow: 0 0 8px var(--accent-pink-glow);
+    transition: width 0.3s ease;
 }
 
-.btn-play-circle {
-    width: 56px;
-    height: 56px;
-    border-radius: var(--radius-pill);
-    background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple));
-    color: #fff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 22px;
-    box-shadow: 0 6px 22px var(--accent-pink-glow);
-    border: none;
-    cursor: pointer;
-    transform: scale(0.85);
-    transition: var(--transition-smooth);
-    pointer-events: auto;
+/* Card Progress Label */
+.card-progress-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 700;
 }
 
-.anime-card:hover .btn-play-circle {
-    transform: scale(1);
+.card-progress-text.has-progress {
+    color: var(--accent-cyan);
 }
 
-.btn-play-circle:hover {
-    transform: scale(1.15);
-    filter: brightness(1.2);
-}
-
-.card-episodes-btn {
+/* Card Bookmark (+) Button */
+.card-bookmark-btn {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.18);
-    color: #fff;
+    color: #f1f5f9;
     padding: 5px 12px;
     border-radius: var(--radius-pill);
     font-size: 11px;
@@ -643,14 +680,32 @@ body.app-mode-home .content-container {
     align-items: center;
     gap: 5px;
     transition: var(--transition-smooth);
+    touch-action: manipulation;
 }
 
-.card-episodes-btn:hover {
+.card-bookmark-btn .bookmark-icon {
+    font-size: 13px;
+    font-weight: 900;
+    line-height: 1;
+}
+
+.card-bookmark-btn:hover {
     background: rgba(255, 77, 109, 0.2);
     border-color: rgba(255, 77, 109, 0.5);
     color: #fff;
     transform: translateY(-1px);
     box-shadow: 0 4px 14px rgba(255, 77, 109, 0.35);
+}
+
+.card-bookmark-btn.is-saved {
+    background: linear-gradient(135deg, rgba(255, 77, 109, 0.25), rgba(0, 242, 254, 0.2));
+    border-color: var(--accent-pink);
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(255, 77, 109, 0.3);
+}
+
+.card-bookmark-btn.is-saved .bookmark-icon {
+    color: var(--accent-pink);
 }
 
 /* Card Body Content */
@@ -799,7 +854,7 @@ body.app-mode-home .content-container {
 }
 
 /* ==========================================================================
-   MODAL DIALOGS (EPISODE QUICK VIEW, PROXY SETTINGS, PASTE HTML)
+   MODAL DIALOGS (EPISODE QUICK VIEW, PROXY SETTINGS)
    ========================================================================== */
 .modal-overlay {
     position: fixed;
@@ -1011,24 +1066,7 @@ body.app-mode-home .content-container {
     to { transform: rotate(360deg); }
 }
 
-/* Paste HTML textarea */
-.paste-textarea {
-    width: 100%;
-    height: 240px;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: #fff;
-    font-family: monospace;
-    font-size: 13px;
-    padding: 12px;
-    outline: none;
-    resize: vertical;
-}
 
-.paste-textarea:focus {
-    border-color: var(--accent-pink);
-}
 
 /* Modal footer */
 .modal-footer {
@@ -1876,6 +1914,140 @@ body.app-mode-home .content-container {
     color: #fff;
     border-color: transparent;
     box-shadow: 0 3px 14px rgba(255, 77, 109, 0.55);
+}
+
+.sheet-ep-btn.watched {
+    background: rgba(0, 242, 254, 0.08);
+    border-color: rgba(0, 242, 254, 0.35);
+    color: var(--accent-cyan);
+}
+
+.sheet-ep-btn.watched::after {
+    content: " ✓";
+    font-size: 10px;
+    font-weight: 900;
+}
+
+.sheet-ep-btn.active.watched {
+    background: var(--gradient-primary);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 3px 14px rgba(255, 77, 109, 0.55);
+}
+
+.ep-item.watched {
+    border-color: rgba(0, 242, 254, 0.4);
+    background: rgba(0, 242, 254, 0.06);
+}
+
+.ep-item.watched .ep-number::after {
+    content: " ✓";
+    color: var(--accent-cyan);
+    font-weight: 900;
+}
+
+/* ==========================================================================
+   DEDICATED "MY LIST" PAGE VIEW
+   ========================================================================== */
+.app-mode-bookmarks .hero-search-section {
+    display: none !important;
+}
+
+.app-mode-bookmarks #results-bar {
+    display: none !important;
+}
+
+.app-mode-bookmarks #content-container {
+    display: none !important;
+}
+
+.my-list-page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 20px 80px;
+    width: 100%;
+    animation: fadeIn 0.25s ease-out;
+}
+
+.my-list-nav-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.my-list-nav-left {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.btn-back-home {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    color: #fff;
+    padding: 8px 16px;
+    border-radius: var(--radius-pill);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: var(--transition-smooth);
+    touch-action: manipulation;
+}
+
+.btn-back-home:hover {
+    background: rgba(255, 77, 109, 0.2);
+    border-color: rgba(255, 77, 109, 0.5);
+    color: #fff;
+    transform: translateX(-3px);
+    box-shadow: 0 4px 14px rgba(255, 77, 109, 0.35);
+}
+
+.my-list-title {
+    font-size: 24px;
+    font-weight: 900;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    letter-spacing: -0.5px;
+}
+
+.my-list-count-badge {
+    background: rgba(255, 77, 109, 0.15);
+    border: 1px solid rgba(255, 77, 109, 0.35);
+    color: var(--accent-pink);
+    font-size: 11px;
+    font-weight: 800;
+    padding: 3px 12px;
+    border-radius: var(--radius-pill);
+}
+
+.bookmarks-clear-btn {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text-muted);
+    padding: 6px 14px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    touch-action: manipulation;
+}
+
+.bookmarks-clear-btn:hover {
+    background: rgba(255, 45, 85, 0.15);
+    border-color: rgba(255, 45, 85, 0.4);
+    color: var(--accent-pink);
 }
 
 /* Mobile Fullscreen Immersive View */
