@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReelDrama - Search Short Dramas &amp; Anime Reels</title>
+    <meta name="description" content="Minimalist YouTube-inspired search engine for short dramas and anime reels. Real-time dynamic search and HTML parsing.">
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#0d121e">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ReelDrama">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="app-mode-home">
+
+    <!-- Top Navigation Header -->
+    <header class="navbar">
+        <div class="nav-brand" id="nav-brand" role="button" tabindex="0" title="Back to Homepage">
+            <div class="brand-icon">▶</div>
+            <div class="brand-name">ReelDrama</div>
+        </div>
+        <div class="nav-actions">
+            <button class="nav-install-btn" id="pwa-install-btn" type="button" title="Install ReelDrama App">
+                <span class="install-icon">⬇</span>
+                <span class="install-text">Install App</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main>
+        <!-- YouTube / Google Inspired Search Hero (Only Search Bar + Logo) -->
+        <section class="hero-search-section" id="hero-section">
+            <div class="hero-logo-wrap" id="hero-logo">
+                <div class="hero-big-icon">▶</div>
+                <h1 class="hero-title">Reel<span>Drama</span></h1>
+                <p class="hero-subtitle">Search and Watch thousands of short dramas and reels.</p>
+            </div>
+
+            <!-- YouTube Style Search Form -->
+            <div class="search-container">
+                <form class="search-form" id="search-form" action="#" method="get">
+                    <div class="search-input-wrap">
+                        <input
+                            class="search-input"
+                            id="search-input"
+                            type="text"
+                            placeholder="Search dramas, titles, or genres (press '/' to focus)..."
+                            autocomplete="off"
+                            spellcheck="false"
+                            aria-label="Search dramas"
+                        >
+                        <button class="search-clear-btn" id="search-clear-btn" type="button" aria-label="Clear input">✕</button>
+                    </div>
+                    <div class="search-divider"></div>
+                    <button class="search-submit-btn" id="search-submit-btn" type="submit" aria-label="Search">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <span>Search</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Quick Suggestions under the Search Bar -->
+            <div class="search-hints" id="search-hints">
+                <span>Try:</span>
+                <button class="search-hint-pill" type="button" data-query="entes">Entes</button>
+                <button class="search-hint-pill" type="button" data-query="revenge">Revenge</button>
+                <button class="search-hint-pill" type="button" data-query="ceo">CEO</button>
+                <button class="search-hint-pill" type="button" data-query="system">System</button>
+                <button class="search-hint-pill" type="button" data-query="dubbed">Dubbed</button>
+                <button class="search-hint-pill" type="button" data-query="romance">Romance</button>
+            </div>
+        </section>
+
+        <!-- Search Results Header Bar (Hidden on Homepage) -->
+        <div class="results-header-bar" id="results-bar">
+            <div class="results-query-info">
+                <span id="results-query">All Dramas</span>
+                <span class="results-count-badge" id="results-count">0 found</span>
+            </div>
+
+            <div class="results-actions">
+                <select class="sort-select" id="sort-select" aria-label="Sort dramas">
+                    <option value="default">Sort by: Relevance</option>
+                    <option value="title-asc">Title: A to Z</option>
+                    <option value="title-desc">Title: Z to A</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Dynamic Content Container -->
+        <div class="content-container" id="content-container">
+            <!-- Shimmer Skeleton Loading -->
+            <div class="skeleton-grid" id="skeleton-grid" style="display: none;">
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+            </div>
+
+            <!-- Real Parsed Anime Cards Grid -->
+            <div class="anime-grid" id="anime-grid"></div>
+
+            <!-- Empty Results State -->
+            <div class="state-message" id="empty-state" style="display: none;">
+                <div class="state-icon">🔍</div>
+                <h3 class="state-title">No Dramas Found</h3>
+                <p class="state-desc">The search returned no results. Try different keywords.</p>
+                <div class="state-actions">
+                    <button class="btn-primary" type="button" onclick="searchByKeyword('entes')">Search "Entes"</button>
+                </div>
+            </div>
+
+            <!-- Connection / Error State -->
+            <div class="state-message" id="error-state" style="display: none;">
+                <div class="state-icon">⚠️</div>
+                <h3 class="state-title">Connection Notice</h3>
+                <p class="state-desc" id="error-desc">Unable to connect to the streaming server directly. Please check your connection or retry.</p>
+                <div class="state-actions">
+                    <button class="btn-primary" id="retry-btn" type="button">Retry Search</button>
+                    <button class="btn-secondary" id="open-paste-from-error" type="button">Paste HTML Directly</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Quick View Drama Detail Modal (Fetches Real Episodes Dynamically) -->
+    <div class="modal-overlay" id="quick-view-modal" aria-hidden="true" role="dialog">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>🎬</span> Drama Quick View
+                </div>
+                <button class="modal-close-btn" id="quick-view-close" type="button" aria-label="Close dialog">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="drama-detail-layout">
+                    <div class="drama-detail-poster-wrap">
+                        <img class="drama-detail-poster" id="quick-view-poster" src="" alt="Drama Poster">
+                    </div>
+                    <div class="drama-detail-info">
+                        <h2 class="drama-detail-title" id="quick-view-title">Drama Title</h2>
+                        <div class="drama-detail-meta" id="quick-view-meta"></div>
+                        <p class="drama-detail-desc" id="quick-view-desc"></p>
+                    </div>
+                </div>
+
+                <!-- Dynamic Episodes Section -->
+                <div class="episodes-section">
+                    <div class="episodes-title">
+                        <span>Select Episode to Watch:</span>
+                        <span id="quick-view-ep-count" style="color: var(--accent-pink);"></span>
+                    </div>
+
+                    <!-- Episode Loading Spinner -->
+                    <div class="episodes-loading-spinner" id="quick-view-episodes-loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <span>Fetching real episodes...</span>
+                    </div>
+
+                    <!-- Clickable Episode Buttons Grid -->
+                    <div class="episodes-grid" id="quick-view-episodes-grid"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="quick-view-stream-btn" type="button">
+                    ▶ Play Episode 1
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- TikTok-Style Immersive Reels Video Player Modal -->
+    <div class="modal-overlay player-modal-overlay" id="player-modal" aria-hidden="true" role="dialog">
+        <div class="reel-player-container" id="reel-player-container">
+            
+            <!-- Video Stage with Swipe & Tap Gestures -->
+            <div class="reel-video-viewport" id="reel-video-viewport">
+                <!-- Blurred video poster backdrop for letterbox framing on wide screens -->
+                <div class="reel-backdrop" id="reel-backdrop"></div>
+
+                <video
+                    class="reel-video-element"
+                    id="player-video-element"
+                    playsinline
+                    webkit-playsinline
+                    x5-playsinline
+                    preload="auto"
+                    referrerpolicy="no-referrer"
+                ></video>
+
+                <!-- Center Tap Play/Pause Ripple Indicator -->
+                <div class="reel-center-feedback" id="reel-center-feedback">
+                    <span class="reel-feedback-icon" id="reel-feedback-icon">▶</span>
+                </div>
+
+                <!-- Heart Like Floating Particle for Double-tap -->
+                <div class="reel-heart-bubble" id="reel-heart-bubble">❤️</div>
+
+                <!-- Swipe Hint (disappears on first interaction) -->
+                <div class="reel-swipe-hint" id="reel-swipe-hint">
+                    <span class="swipe-arrow">▲</span>
+                    <span>Swipe up for next episode</span>
+                </div>
+
+                <!-- Buffering / Loading Indicator -->
+                <div class="player-buffering" id="player-buffering">
+                    <div class="player-spinner"></div>
+                    <span class="player-buffering-text" id="player-buffering-text">Loading Stream...</span>
+                </div>
+
+                <!-- Error Overlay (100% Internal, no external links!) -->
+                <div class="player-error-overlay" id="player-error-overlay" style="display: none;">
+                    <span style="font-size: 36px;">⚠️</span>
+                    <h4 style="color:#fff; margin: 4px 0 2px;">Playback Notice</h4>
+                    <p class="player-error-text" id="player-error-text">Stream could not be played directly.</p>
+                    <div class="player-error-actions" style="display: flex; gap: 10px; margin-top: 14px;">
+                        <button class="btn-primary" id="player-retry-stream-btn" type="button">↻ Retry Episode</button>
+                        <button class="btn-secondary" id="player-error-close-btn" type="button">✕ Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Floating Header Bar (Overlay) -->
+            <div class="reel-top-bar">
+                <button class="reel-circle-btn" id="player-close-btn" type="button" aria-label="Back">
+                    <span>←</span>
+                </button>
+                <div class="reel-top-meta">
+                    <span class="reel-drama-badge" id="player-drama-title">Drama Title</span>
+                    <span class="reel-ep-pill" id="player-ep-indicator">EP 1</span>
+                </div>
+                <button class="reel-circle-btn" id="player-close-btn-alt" type="button" aria-label="Close">
+                    <span>✕</span>
+                </button>
+            </div>
+
+            <!-- Right Floating Action Rail (TikTok Column) -->
+            <div class="reel-right-rail">
+                <!-- Like / Heart Button -->
+                <button class="reel-rail-btn" id="player-like-btn" type="button" aria-label="Like drama">
+                    <span class="reel-rail-icon" id="player-like-icon">🤍</span>
+                    <span class="reel-rail-label" id="player-like-count">14.2k</span>
+                </button>
+
+                <!-- Episodes Drawer Trigger Button -->
+                <button class="reel-rail-btn" id="player-drawer-btn" type="button" aria-label="View all episodes">
+                    <span class="reel-rail-icon">📑</span>
+                    <span class="reel-rail-label">Episodes</span>
+                </button>
+
+                <!-- Prev Episode Button -->
+                <button class="reel-rail-btn" id="player-prev-ep-btn" type="button" aria-label="Previous episode">
+                    <span class="reel-rail-icon">⏮</span>
+                    <span class="reel-rail-label">Prev</span>
+                </button>
+
+                <!-- Next Episode Button -->
+                <button class="reel-rail-btn highlight" id="player-next-ep-btn" type="button" aria-label="Next episode">
+                    <span class="reel-rail-icon">⏭</span>
+                    <span class="reel-rail-label">Next</span>
+                </button>
+
+                <!-- Sound / Mute Toggle Button -->
+                <button class="reel-rail-btn" id="player-mute-btn" type="button" aria-label="Toggle mute">
+                    <span class="reel-rail-icon" id="player-mute-icon">🔊</span>
+                    <span class="reel-rail-label" id="player-mute-label">Sound</span>
+                </button>
+            </div>
+
+            <!-- Bottom Floating Info & Progress Bar -->
+            <div class="reel-bottom-bar">
+                <div class="reel-info-content">
+                    <div class="reel-info-title-row">
+                        <h3 class="reel-info-title" id="player-info-title">Drama Title</h3>
+                        <span class="reel-info-quality">1080P HD</span>
+                    </div>
+                    <p class="reel-info-desc" id="player-info-desc">Swipe up to watch the next episode...</p>
+                </div>
+
+                <!-- Custom TikTok Scrub Line Progress Bar -->
+                <div class="reel-scrub-container" id="player-scrub-container">
+                    <div class="reel-scrub-track" id="player-scrub-track">
+                        <div class="reel-scrub-buffered" id="player-scrub-buffered"></div>
+                        <div class="reel-scrub-progress" id="player-scrub-progress">
+                            <span class="reel-scrub-handle"></span>
+                        </div>
+                    </div>
+                    <div class="reel-time-display">
+                        <span id="player-time-current">0:00</span> / <span id="player-time-total">0:00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Slide-Up Bottom Drawer for All Episodes -->
+            <div class="reel-episodes-sheet" id="reel-episodes-sheet">
+                <div class="sheet-backdrop" id="sheet-backdrop"></div>
+                <div class="sheet-panel">
+                    <div class="sheet-handle-bar"></div>
+                    <div class="sheet-header">
+                        <div class="sheet-title">
+                            <span>📑 Episodes</span>
+                            <span class="sheet-ep-total" id="sheet-ep-total"></span>
+                        </div>
+                        <button class="sheet-close-btn" id="sheet-close-btn" type="button">✕</button>
+                    </div>
+                    <div class="sheet-body">
+                        <div class="sheet-episodes-grid" id="player-episodes-strip"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Paste Raw HTML Modal -->
+    <div class="modal-overlay" id="paste-modal" aria-hidden="true" role="dialog">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>📋</span> Paste Raw HTML
+                </div>
+                <button class="modal-close-btn" id="paste-close-btn" type="button" aria-label="Close dialog">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+                    Paste the HTML from any search or drama detail page. The parser will extract all cards, posters, and episodes dynamically!
+                </p>
+                <textarea class="paste-textarea" id="paste-textarea" placeholder="Paste <!DOCTYPE html>... here"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="paste-cancel-btn" type="button">Cancel</button>
+                <button class="btn-primary" id="paste-submit-btn" type="button">Parse &amp; Render Cards</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Proxy Settings Modal -->
+    <div class="modal-overlay" id="proxy-modal" aria-hidden="true" role="dialog">
+        <div class="modal-card" style="max-width: 520px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>⚙️</span> CORS Proxy Settings
+                </div>
+                <button class="modal-close-btn" id="proxy-close-btn" type="button" aria-label="Close dialog">✕</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+                <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.5;">
+                    When deployed on GitHub Pages, requests to external domains are subject to browser CORS. We automatically route through reliable proxies, but you can configure preferences here.
+                </p>
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+                        PROXY METHOD
+                    </label>
+                    <select class="sort-select" id="proxy-select" style="width: 100%; padding: 10px;">
+                        <option value="auto">Auto Failover (AllOrigins &rarr; CodeTabs &rarr; Direct)</option>
+                        <option value="allorigins">AllOrigins (allorigins.win)</option>
+                        <option value="codetabs">CodeTabs (api.codetabs.com)</option>
+                        <option value="direct">Direct Fetch (Local / Extension)</option>
+                        <option value="custom">Custom Proxy URL</option>
+                    </select>
+                </div>
+                <div id="custom-proxy-wrap" style="display: none;">
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+                        CUSTOM PROXY URL
+                    </label>
+                    <input
+                        type="text"
+                        id="custom-proxy-input"
+                        placeholder="https://my-proxy.com/?url={url}"
+                        style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff; padding: 10px; font-size: 13px; outline: none;"
+                    >
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="save-proxy-btn" type="button">Save Settings</button>
+            </div>
+        </div>
+
+    <!-- PWA Install Guide Modal (for Firefox, Zen Browser, Safari, etc.) -->
+    <div class="modal-overlay" id="pwa-guide-modal" aria-hidden="true" role="dialog">
+        <div class="modal-card" style="max-width: 480px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>⬇</span> Install ReelDrama
+                </div>
+                <button class="modal-close-btn" id="pwa-guide-close-btn" type="button" aria-label="Close dialog">✕</button>
+            </div>
+            <div class="modal-body" id="pwa-guide-content" style="display: flex; flex-direction: column; gap: 14px;">
+                <!-- Populated dynamically based on browser -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="pwa-guide-ok-btn" type="button">Got it!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <p>ReelDrama &bull; Dynamic Search &bull; For GitHub Pages</p>
+    </footer>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="parser.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

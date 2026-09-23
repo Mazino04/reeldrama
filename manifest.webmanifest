@@ -1,0 +1,36 @@
+{
+  "name": "ReelDrama - Short Dramas & Anime Reels",
+  "short_name": "ReelDrama",
+  "description": "Search and watch short dramas and anime reels with an immersive TikTok-style vertical player.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070a12",
+  "theme_color": "#0d121e",
+  "orientation": "portrait-primary",
+  "categories": [
+    "entertainment",
+    "video"
+  ],
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
+

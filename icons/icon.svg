@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0f1d"/>
+      <stop offset="50%" stop-color="#11182c"/>
+      <stop offset="100%" stop-color="#070a12"/>
+    </linearGradient>
+    <linearGradient id="play-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ff2d55"/>
+      <stop offset="50%" stop-color="#ff4d6d"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+    <linearGradient id="glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#4facfe"/>
+    </linearGradient>
+    <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+    <filter id="subtle-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <!-- Base Rounded Container -->
+  <rect width="512" height="512" rx="112" fill="url(#bg-grad)"/>
+
+  <!-- Outer Neon Border -->
+  <rect x="12" y="12" width="488" height="488" rx="102" fill="none" stroke="url(#play-grad)" stroke-width="4" stroke-opacity="0.45"/>
+
+  <!-- Subtle Cyan Accent Arc -->
+  <path d="M 90 400 A 200 200 0 0 1 400 90" fill="none" stroke="url(#glow-grad)" stroke-width="3" stroke-dasharray="12 16" stroke-opacity="0.35"/>
+
+  <!-- Inner Circle Plate -->
+  <circle cx="256" cy="256" r="148" fill="#141c30" stroke="rgba(255,255,255,0.08)" stroke-width="3" filter="url(#subtle-shadow)"/>
+
+  <!-- Neon Play Triangle Icon -->
+  <polygon points="220,180 340,256 220,332" fill="url(#play-grad)" filter="url(#neon-glow)"/>
+
+  <!-- Reel Sparkle Dot -->
+  <circle cx="340" cy="180" r="10" fill="#00f2fe" filter="url(#neon-glow)"/>
+</svg>
+
