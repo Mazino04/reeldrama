@@ -328,11 +328,15 @@ const DramaParser = (() => {
             if (tagText && !isBrandedWord(tagText)) tags.push(tagText);
         });
 
+        const canonicalEl = doc.querySelector('link[rel="canonical"]') || doc.querySelector('meta[property="og:url"]');
+        const canonicalUrl = canonicalEl ? (canonicalEl.getAttribute('href') || canonicalEl.getAttribute('content') || '') : '';
+
         return {
             episodeCount,
             episodeList,
             description: desc,
-            tags
+            tags,
+            canonicalUrl
         };
     }
 
@@ -577,18 +581,23 @@ const DramaParser = (() => {
                 if (Array.isArray(parsed)) {
                     episodes = parsed.map(item => {
                         const epNum = item.route_episode_number || item.number || 1;
-                        const rawPlayUrl = cleanJsonUrl(item.play_url || item.direct_play_url || item.stream_url || '');
+                        const multiResUrl = (Array.isArray(item.multi_resolutions) && item.multi_resolutions.length > 0)
+                            ? (item.multi_resolutions.find(r => r.is_default)?.stream_url || item.multi_resolutions[0]?.stream_url || '')
+                            : '';
+                        const rawPlayUrl = cleanJsonUrl(item.play_url || item.direct_play_url || multiResUrl || item.stream_url || '');
                         const unwrappedEp = unwrapStreamUrl(rawPlayUrl);
                         const epPlayUrl = unwrappedEp.streamUrl;
                         const epDirectUrl = item.direct_play_url ? unwrapStreamUrl(cleanJsonUrl(item.direct_play_url)).streamUrl : epPlayUrl;
+                        const epFallbackUrl = cleanJsonUrl(item.direct_play_url || item.play_url || unwrappedEp.originalUrl || '');
                         const epThumb = cleanJsonUrl(item.thumb_url || '');
                         const epSub = cleanJsonUrl(item.subtitle_url || '');
-                        const isHls = (item.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(epPlayUrl) || /\.m3u8(?:\?|$)/i.test(epDirectUrl);
+                        const isHls = (item.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(epPlayUrl) || /\.m3u8(?:\?|$)/i.test(epDirectUrl) || /\.m3u8(?:\?|$)/i.test(epFallbackUrl);
                         return {
                             number: epNum,
                             title: item.title ? cleanText(item.title) : `Episode ${epNum}`,
-                            playUrl: epPlayUrl || epDirectUrl,
-                            directPlayUrl: epDirectUrl,
+                            playUrl: epPlayUrl || epDirectUrl || epFallbackUrl,
+                            directPlayUrl: epDirectUrl || epFallbackUrl,
+                            fallbackUrl: epFallbackUrl,
                             key: unwrappedEp.key,
                             exp: unwrappedEp.exp,
                             subtitleUrl: epSub,

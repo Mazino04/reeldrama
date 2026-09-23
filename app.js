@@ -14,10 +14,106 @@
  */
 const CF_WORKER_URL = 'https://bold-hill-9a84.aleperaza45.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
 
+// Domains that supply their own CORS headers (Access-Control-Allow-Origin: *)
+// or reject worker proxying with 403 (due to auth_key or Referer validation).
+// URLs from these hosts will play DIRECTLY without going through the Cloudflare Worker.
+const EXCLUDED_PROXY_HOSTS = [
+    'shorttv.live',
+    'volcengine-forward.shorttv.live',
+    'volces.com',
+    'serealplus.com',
+    'byte-nginx'
+];
+
+function shouldBypassProxy(url) {
+    if (!url) return false;
+    try {
+        const u = new URL(url);
+        const host = u.hostname.toLowerCase();
+        return EXCLUDED_PROXY_HOSTS.some(excluded => host === excluded || host.endsWith('.' + excluded));
+    } catch (_) {
+        return false;
+    }
+}
+
+// Allowed Short Drama Providers (5 Only)
+const ALLOWED_PROVIDERS = [
+    { key: 'dramabox', label: 'DramaBox', icon: '📦' },
+    { key: 'reelshort', label: 'ReelShort', icon: '⚡' },
+    { key: 'netshort', label: 'NetShort', icon: '🌐' },
+    { key: 'goodshort', label: 'GoodShort', icon: '✨' },
+    { key: 'dramashorts', label: 'DramaShorts', icon: '🎬' }
+];
+
+function getProviderLabel(key) {
+    if (!key) return 'DramaBox';
+    const clean = String(key).trim().toLowerCase();
+    const found = ALLOWED_PROVIDERS.find(p => p.key === clean || p.label.toLowerCase() === clean);
+    return found ? found.label : (String(key).trim() || 'DramaBox');
+}
+
+/**
+ * Extract human-readable provider name for an item
+ */
+function getItemProviderName(item) {
+    if (!item) return getProviderLabel(AppState.activeProvider || 'dramabox');
+    // 1. Explicit category_name from API
+    if (item.category_name && typeof item.category_name === 'string' && item.category_name.trim()) {
+        return getProviderLabel(item.category_name.trim());
+    }
+    // 2. Explicit provider field
+    if (item.provider && typeof item.provider === 'string' && item.provider.trim()) {
+        return getProviderLabel(item.provider.trim());
+    }
+    // 3. ID prefix (e.g. 'dramabox:42000027406')
+    if (item.id && typeof item.id === 'string' && item.id.includes(':')) {
+        const idProv = item.id.split(':')[0].trim();
+        if (idProv && idProv.length > 2) {
+            return getProviderLabel(idProv);
+        }
+    }
+    // 4. URL query parameter (e.g. ?provider=dramabox)
+    if (item.url && typeof item.url === 'string') {
+        try {
+            const urlObj = new URL(item.url, 'https://narto-drama.com');
+            const provParam = urlObj.searchParams.get('provider');
+            if (provParam) {
+                return getProviderLabel(provParam);
+            }
+        } catch (_) {}
+    }
+    // 5. Fallback to active provider
+    return getProviderLabel(AppState.activeProvider || 'dramabox');
+}
+
+// Allowed Search Languages (en-US / es-ES)
+const ALLOWED_LANGS = [
+    { code: 'en-US', label: 'English', flag: '🇺🇸' },
+    { code: 'es-ES', label: 'Español', flag: '🇪🇸' }
+];
+
+function getLanguageLabel(code) {
+    const found = ALLOWED_LANGS.find(l => l.code === code);
+    return found ? `${found.flag} ${found.label}` : '🇺🇸 English';
+}
+
+// Validate saved provider & language from localStorage, defaulting strictly to dramabox & en-US
+const savedProvider = localStorage.getItem('nd_active_provider');
+const initialProvider = (savedProvider && ALLOWED_PROVIDERS.some(p => p.key === savedProvider.toLowerCase())) 
+    ? savedProvider.toLowerCase() 
+    : 'dramabox';
+
+const savedLang = localStorage.getItem('nd_search_lang');
+const initialLang = (savedLang && ALLOWED_LANGS.some(l => l.code === savedLang)) 
+    ? savedLang 
+    : 'en-US';
+
 // Application State & Caches
 const AppState = {
     mode: 'home', // 'home' | 'results'
     currentQuery: '',
+    activeProvider: initialProvider,
+    currentLang: initialLang,
     results: [],
     selectedDrama: null,
     proxyMethod: localStorage.getItem('nd_proxy_method') || 'auto',
@@ -143,6 +239,7 @@ const UserDataManager = {
                 poster: safePoster,
                 url: drama.url,
                 tags: Array.isArray(drama.tags) ? drama.tags : [],
+                category_name: drama.category_name || getItemProviderName(drama),
                 episodes: drama.episodes || (drama.episodeList ? drama.episodeList.length : 0),
                 savedAt: Date.now()
             };
@@ -255,11 +352,16 @@ const elements = {
     searchInput: getEl('search-input'),
     searchClearBtn: getEl('search-clear-btn'),
     searchHints: document.querySelectorAll('.search-hint-pill'),
+    heroProviderTabs: getEl('hero-provider-tabs'),
+    heroLangTabs: getEl('hero-lang-tabs'),
     
     // Results & Controls
     resultsBar: getEl('results-bar'),
+    resultsProviderBar: getEl('results-provider-bar'),
+    resultsProviderTabs: getEl('results-provider-tabs'),
     resultsQuery: getEl('results-query'),
     resultsCount: getEl('results-count'),
+    langSelect: getEl('lang-select'),
     sortSelect: getEl('sort-select'),
     contentContainer: getEl('content-container'),
     animeGrid: getEl('anime-grid'),
@@ -354,9 +456,24 @@ document.addEventListener('DOMContentLoaded', () => {
     registerServiceWorker();
     setupPwaInstall();
 
-    // Check if URL has #mylist or ?q= parameter
+    // Check if URL has #mylist or ?q= / ?provider= parameters
     const urlParams = new URLSearchParams(window.location.search);
     const initialQuery = urlParams.get('q');
+    const initialProvider = urlParams.get('provider');
+
+    if (initialProvider && ALLOWED_PROVIDERS.some(p => p.key === initialProvider.toLowerCase())) {
+        AppState.activeProvider = initialProvider.toLowerCase();
+        localStorage.setItem('nd_active_provider', AppState.activeProvider);
+    }
+    updateProviderTabsUI(AppState.activeProvider);
+
+    const initialLang = urlParams.get('lang');
+    if (initialLang && ALLOWED_LANGS.some(l => l.code === initialLang)) {
+        AppState.currentLang = initialLang;
+        localStorage.setItem('nd_search_lang', AppState.currentLang);
+    }
+    updateLangUI(AppState.currentLang);
+
     if (window.location.hash === '#mylist' || urlParams.get('view') === 'mylist') {
         setAppMode('bookmarks');
     } else if (initialQuery && initialQuery.trim()) {
@@ -366,9 +483,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (elements.searchClearBtn) {
             elements.searchClearBtn.classList.add('visible');
         }
-        triggerDynamicSearch(initialQuery.trim());
+        triggerDynamicSearch(initialQuery.trim(), AppState.activeProvider, AppState.currentLang);
     } else {
-        // Initial state: Pure minimalist homepage with ONLY logo and search bar
+        // Initial state: Pure minimalist homepage with ONLY logo, search bar, and provider pills
         setAppMode('home');
     }
 
@@ -378,10 +495,22 @@ document.addEventListener('DOMContentLoaded', () => {
             setAppMode('bookmarks');
         } else {
             const currentParams = new URLSearchParams(window.location.search);
+            const prov = currentParams.get('provider');
+            if (prov && ALLOWED_PROVIDERS.some(p => p.key === prov.toLowerCase())) {
+                AppState.activeProvider = prov.toLowerCase();
+                updateProviderTabsUI(AppState.activeProvider);
+            }
+            const lng = currentParams.get('lang');
+            if (lng && ALLOWED_LANGS.some(l => l.code === lng)) {
+                AppState.currentLang = lng;
+                updateLangUI(AppState.currentLang);
+            }
             const q = currentParams.get('q');
             if (q && q.trim()) {
                 if (elements.searchInput) elements.searchInput.value = q.trim();
-                triggerDynamicSearch(q.trim());
+                triggerDynamicSearch(q.trim(), AppState.activeProvider, AppState.currentLang);
+            } else if (prov || lng) {
+                triggerDynamicSearch('', AppState.activeProvider, AppState.currentLang);
             } else {
                 resetToHomePage();
             }
@@ -399,13 +528,42 @@ function setupEventListeners() {
         elements.heroLogo.addEventListener('click', resetToHomePage);
     }
 
+    // Provider Tab Selector Pills (Hero & Results bars)
+    document.querySelectorAll('.provider-tab-pill').forEach(pill => {
+        pill.addEventListener('click', (e) => {
+            e.preventDefault();
+            const providerKey = pill.getAttribute('data-provider');
+            if (providerKey && ALLOWED_PROVIDERS.some(p => p.key === providerKey.toLowerCase())) {
+                selectProvider(providerKey.toLowerCase());
+            }
+        });
+    });
+
+    // Language Tab Selector Pills (Hero)
+    document.querySelectorAll('.lang-tab-pill').forEach(pill => {
+        pill.addEventListener('click', (e) => {
+            e.preventDefault();
+            const lang = pill.getAttribute('data-lang');
+            if (lang && ALLOWED_LANGS.some(l => l.code === lang)) {
+                selectLanguage(lang);
+            }
+        });
+    });
+
+    // Language Select Dropdown (Results Bar)
+    if (elements.langSelect) {
+        elements.langSelect.addEventListener('change', () => {
+            selectLanguage(elements.langSelect.value);
+        });
+    }
+
     // Search Form Submit
     if (elements.searchForm) {
         elements.searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
             const query = elements.searchInput ? elements.searchInput.value.trim() : '';
             if (query) {
-                triggerDynamicSearch(query);
+                triggerDynamicSearch(query, AppState.activeProvider);
             }
         });
     }
@@ -433,7 +591,7 @@ function setupEventListeners() {
                     if (elements.searchClearBtn) {
                         elements.searchClearBtn.classList.add('visible');
                     }
-                    triggerDynamicSearch(query);
+                    triggerDynamicSearch(query, AppState.activeProvider);
                 }
             });
         });
@@ -449,9 +607,7 @@ function setupEventListeners() {
     // Retry Button
     if (elements.retryBtn) {
         elements.retryBtn.addEventListener('click', () => {
-            if (AppState.currentQuery) {
-                triggerDynamicSearch(AppState.currentQuery, true);
-            }
+            triggerDynamicSearch(AppState.currentQuery, AppState.activeProvider, true);
         });
     }
 
@@ -711,6 +867,63 @@ function renderBookmarksView() {
 }
 
 /**
+ * Update UI highlighting for provider tabs
+ */
+function updateProviderTabsUI(activeKey) {
+    const key = (activeKey || AppState.activeProvider || 'dramabox').toLowerCase();
+    document.querySelectorAll('.provider-tab-pill').forEach(pill => {
+        const pKey = pill.getAttribute('data-provider');
+        const isActive = pKey === key;
+        pill.classList.toggle('active', isActive);
+        pill.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+}
+
+/**
+ * Handle user switching provider
+ */
+function selectProvider(providerKey) {
+    if (!providerKey) return;
+    const cleanKey = providerKey.toLowerCase();
+    AppState.activeProvider = cleanKey;
+    localStorage.setItem('nd_active_provider', cleanKey);
+    updateProviderTabsUI(cleanKey);
+
+    const query = elements.searchInput ? elements.searchInput.value.trim() : (AppState.currentQuery || '');
+    triggerDynamicSearch(query, cleanKey, AppState.currentLang);
+}
+
+/**
+ * Update UI highlighting for language pills and select
+ */
+function updateLangUI(activeLang) {
+    const lang = (activeLang || AppState.currentLang || 'en-US');
+    if (elements.langSelect) {
+        elements.langSelect.value = lang;
+    }
+    document.querySelectorAll('.lang-tab-pill').forEach(pill => {
+        const pLang = pill.getAttribute('data-lang');
+        const isActive = pLang === lang;
+        pill.classList.toggle('active', isActive);
+        pill.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    });
+}
+
+/**
+ * Handle user switching language
+ */
+function selectLanguage(langCode) {
+    if (!langCode) return;
+    const validLang = ALLOWED_LANGS.some(l => l.code === langCode) ? langCode : 'en-US';
+    AppState.currentLang = validLang;
+    localStorage.setItem('nd_search_lang', validLang);
+    updateLangUI(validLang);
+
+    const query = elements.searchInput ? elements.searchInput.value.trim() : (AppState.currentQuery || '');
+    triggerDynamicSearch(query, AppState.activeProvider, validLang);
+}
+
+/**
  * Reset application to clean home view
  */
 function resetToHomePage() {
@@ -720,6 +933,9 @@ function resetToHomePage() {
     if (elements.searchClearBtn) {
         elements.searchClearBtn.classList.remove('visible');
     }
+    if (elements.resultsProviderBar) {
+        elements.resultsProviderBar.style.display = 'none';
+    }
     AppState.currentQuery = '';
     AppState.results = [];
     window.history.pushState({}, '', window.location.pathname);
@@ -727,16 +943,253 @@ function resetToHomePage() {
 }
 
 /**
- * Trigger dynamic search to Narto Drama with Instant Caching
- * Only 1 single network request is made!
+ * Parse JSON data returned by /home/providers/sections
  */
-async function triggerDynamicSearch(query, bypassCache = false) {
-    if (!query || !query.trim()) return;
-    const cleanQuery = query.trim();
+function parseProviderSectionsResponse(data, fallbackBaseUrl = 'https://narto-drama.com', query = '') {
+    if (!data || typeof data !== 'object') return [];
+    const items = [];
+    const seenUrls = new Set();
+    const activeProvider = data.active_provider || AppState.activeProvider || 'dramabox';
+    const activeLang = AppState.currentLang || 'en-US';
+    const cleanQuery = (query || '').trim().toLowerCase();
+
+    let sections = Array.isArray(data.sections) ? data.sections : [];
+
+    // CRITICAL: When a search query is provided, check if the response actually contains search results!
+    if (cleanQuery) {
+        // If search_mode is explicitly false or login_required is true, this endpoint did NOT execute the search
+        // It merely returned generic browse sections (home, trending, popular) which are NOT search results!
+        if (data.search_mode === false || data.login_required) {
+            return []; // Signal empty so fetchProviderSections falls back to real search results
+        }
+        // When searching, ONLY extract items from the 'search' section tab
+        const searchSection = sections.find(s => s.tab_key === 'search');
+        if (!searchSection || !Array.isArray(searchSection.items) || searchSection.items.length === 0) {
+            return []; // No search section or empty items
+        }
+        sections = [searchSection];
+    }
+
+    sections.forEach(section => {
+        const sectionItems = Array.isArray(section.items) ? section.items : [];
+        sectionItems.forEach(rawItem => {
+            if (!rawItem) return;
+            const title = String(rawItem.title || 'Untitled Drama').trim();
+            let rawUrl = rawItem.url || rawItem.watch_url || '';
+            if (rawUrl && rawUrl.startsWith('/')) {
+                rawUrl = `${fallbackBaseUrl}${rawUrl}`;
+            }
+            if (!rawUrl && rawItem.book_id) {
+                const prov = rawItem.category_name ? rawItem.category_name.toLowerCase().replace(/\s+/g, '') : activeProvider;
+                rawUrl = `${fallbackBaseUrl}/search/import?provider=${encodeURIComponent(prov)}&book_id=${encodeURIComponent(rawItem.book_id)}&title=${encodeURIComponent(title)}&lang=${encodeURIComponent(activeLang)}&target_lang=${encodeURIComponent(activeLang)}`;
+            }
+            if (!rawUrl) return;
+
+            const dedupeKey = rawUrl.toLowerCase();
+            if (seenUrls.has(dedupeKey)) return;
+            seenUrls.add(dedupeKey);
+
+            let poster = rawItem.poster_url || rawItem.poster || '';
+            if (poster && poster.startsWith('/')) {
+                poster = `${fallbackBaseUrl}${poster}`;
+            }
+
+            const tags = Array.isArray(rawItem.tag_names) && rawItem.tag_names.length > 0
+                ? rawItem.tag_names
+                : (Array.isArray(rawItem.tags) && rawItem.tags.length > 0 
+                    ? rawItem.tags 
+                    : (rawItem.category_name ? [rawItem.category_name] : []));
+
+            items.push({
+                id: rawItem.id || rawItem.book_id || (rawItem.id ? String(rawItem.id) : ''),
+                title: title,
+                poster: poster,
+                url: rawUrl,
+                description: rawItem.description || '',
+                tags: tags,
+                category_name: rawItem.category_name || getProviderLabel(activeProvider),
+                episodes: rawItem.episodes || 0,
+                episodeList: rawItem.episodeList || []
+            });
+        });
+    });
+
+    return items;
+}
+
+/**
+ * Fetch fast JSON with sequential proxy waterfall
+ */
+async function fetchFastJson(targetUrl) {
+    if (!targetUrl || typeof targetUrl !== 'string') {
+        throw new Error('Invalid URL');
+    }
+
+    const errors = [];
+    const isLocalhost = Boolean(
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.protocol === 'file:'
+    );
+
+    // 1. Cloudflare Worker (TOP PRIORITY — fastest, reliable CORS)
+    if (CF_WORKER_URL && CF_WORKER_URL.trim()) {
+        try {
+            const workerUrl = `${CF_WORKER_URL.replace(/\/+$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
+            const res = await fetchWithTimeout(workerUrl, {
+                headers: { 'Accept': 'application/json' },
+                timeout: 15000
+            });
+            if (res.ok) return await res.json();
+            errors.push(`CF Worker: HTTP ${res.status}`);
+        } catch (e) {
+            errors.push(`CF Worker: ${e.message}`);
+        }
+    }
+
+    // 2. Custom proxy
+    if (AppState.proxyMethod === 'custom' && AppState.customProxy) {
+        try {
+            const customUrl = `${AppState.customProxy.replace(/\/+$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
+            const res = await fetchWithTimeout(customUrl, {
+                headers: { 'Accept': 'application/json' },
+                timeout: 14000
+            });
+            if (res.ok) return await res.json();
+        } catch (e) {
+            errors.push(`Custom proxy: ${e.message}`);
+        }
+    }
+
+    // 3. Direct fetch
+    try {
+        const res = await fetchWithTimeout(targetUrl, {
+            mode: 'cors',
+            headers: { 'Accept': 'application/json' },
+            timeout: isLocalhost ? 5000 : 3000
+        });
+        if (res.ok) return await res.json();
+    } catch (e) {
+        errors.push(`Direct: ${e.message}`);
+    }
+
+    // 4. AllOrigins proxy
+    try {
+        const res = await fetchWithTimeout(
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+            { headers: { 'Accept': 'application/json' }, timeout: 15000 }
+        );
+        if (res.ok) return await res.json();
+    } catch (e) {
+        try {
+            const res = await fetchWithTimeout(
+                `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+                { timeout: 15000 }
+            );
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.contents) {
+                    return typeof data.contents === 'string' ? JSON.parse(data.contents) : data.contents;
+                }
+            }
+        } catch (e2) {
+            errors.push(`AllOrigins: ${e2.message}`);
+        }
+    }
+
+    // 5. CodeTabs proxy
+    try {
+        const res = await fetchWithTimeout(
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+            { headers: { 'Accept': 'application/json' }, timeout: 15000 }
+        );
+        if (res.ok) return await res.json();
+    } catch (e) {
+        errors.push(`CodeTabs: ${e.message}`);
+    }
+
+    throw new Error(`Failed to load data: ${errors.join(' | ')}`);
+}
+
+/**
+ * Fetch provider sections from https://narto-drama.com/home/providers/sections
+ * With automatic fallback to https://narto-drama.com/search?q=... when needed
+ */
+async function fetchProviderSections(providerKey, query = '', lang = null) {
+    const cleanQuery = (query || '').trim();
+    const cleanProvider = (providerKey || AppState.activeProvider || 'dramabox').toLowerCase();
+    const cleanLang = (lang || AppState.currentLang || 'en-US');
+
+    let items = [];
+
+    if (cleanQuery) {
+        // Step 1: Attempt provider search on /home/providers/sections
+        try {
+            const queryPart = `&q=${encodeURIComponent(cleanQuery)}`;
+            const targetUrl = `https://narto-drama.com/home/providers/sections?provider=${encodeURIComponent(cleanProvider)}&lang=${encodeURIComponent(cleanLang)}&target_lang=${encodeURIComponent(cleanLang)}${queryPart}`;
+            const data = await fetchFastJson(targetUrl);
+            items = parseProviderSectionsResponse(data, 'https://narto-drama.com', cleanQuery);
+        } catch (_) {
+            items = [];
+        }
+
+        // Step 2: Seamless fallback to global search if provider sections returned 0 items or generic browse data
+        if (items.length === 0) {
+            try {
+                const searchPageUrl = `https://narto-drama.com/search?lang=${encodeURIComponent(cleanLang)}&q=${encodeURIComponent(cleanQuery)}`;
+                const { html } = await fetchFastHtml(searchPageUrl);
+                const parsed = DramaParser.parse(html, 'https://narto-drama.com');
+                if (parsed && parsed.items && parsed.items.length > 0) {
+                    const providerMatches = parsed.items.filter(it => {
+                        const txt = `${it.title} ${it.category_name || ''} ${(it.tags || []).join(' ')} ${it.url || ''}`.toLowerCase();
+                        return txt.includes(cleanProvider);
+                    });
+                    items = providerMatches.length > 0 ? providerMatches : parsed.items;
+                }
+            } catch (fallbackErr) {
+                console.warn('[Fallback Search Notice]:', fallbackErr.message);
+            }
+        }
+    } else {
+        // Browse mode: fetch provider sections without query
+        const targetUrl = `https://narto-drama.com/home/providers/sections?provider=${encodeURIComponent(cleanProvider)}&lang=${encodeURIComponent(cleanLang)}&target_lang=${encodeURIComponent(cleanLang)}`;
+        const data = await fetchFastJson(targetUrl);
+        items = parseProviderSectionsResponse(data, 'https://narto-drama.com', '');
+    }
+
+    return items;
+}
+
+/**
+ * Trigger dynamic search or browse for the active provider
+ */
+async function triggerDynamicSearch(query = '', providerKey = null, lang = null, bypassCache = false) {
+    const cleanQuery = (query || '').trim();
+    if (providerKey) {
+        AppState.activeProvider = providerKey.toLowerCase();
+        localStorage.setItem('nd_active_provider', AppState.activeProvider);
+    }
+    if (lang && ALLOWED_LANGS.some(l => l.code === lang)) {
+        AppState.currentLang = lang;
+        localStorage.setItem('nd_search_lang', AppState.currentLang);
+    }
+    const activeProv = AppState.activeProvider || 'dramabox';
+    const activeLang = AppState.currentLang || 'en-US';
     AppState.currentQuery = cleanQuery;
 
-    // Update URL query parameter without full reload
-    const newUrl = `${window.location.pathname}?q=${encodeURIComponent(cleanQuery)}`;
+    updateProviderTabsUI(activeProv);
+    updateLangUI(activeLang);
+
+    // Update URL query parameters
+    const searchParams = new URLSearchParams(window.location.search);
+    if (cleanQuery) {
+        searchParams.set('q', cleanQuery);
+    } else {
+        searchParams.delete('q');
+    }
+    searchParams.set('provider', activeProv);
+    searchParams.set('lang', activeLang);
+    const newUrl = `${window.location.pathname}?${searchParams.toString()}`;
     window.history.pushState({ path: newUrl }, '', newUrl);
 
     // Transition view to results mode
@@ -746,39 +1199,33 @@ async function triggerDynamicSearch(query, bypassCache = false) {
     AppState.currentSearchSessionId = (AppState.currentSearchSessionId || 0) + 1;
     const sessionId = AppState.currentSearchSessionId;
 
-    // Check In-Memory Cache first for instant 0ms display
-    const cacheKey = cleanQuery.toLowerCase();
+    const cacheKey = `${activeProv}:${activeLang}:${cleanQuery.toLowerCase()}`;
+    const provLabel = getProviderLabel(activeProv);
+
     if (!bypassCache && SearchCache.has(cacheKey)) {
         AppState.results = SearchCache.get(cacheKey);
-        renderAnimeCards(AppState.results, cleanQuery);
+        renderAnimeCards(AppState.results, cleanQuery, provLabel);
         resolveAllCardEpisodes(AppState.results, sessionId);
         return;
     }
 
     showLoading();
 
-    const targetUrl = `https://narto-drama.com/search?lang=en-US&q=${encodeURIComponent(cleanQuery)}`;
-
     try {
-        const { html } = await fetchFastHtml(targetUrl);
-
-        // Parse HTML document with DramaParser
-        const parsed = DramaParser.parse(html, 'https://narto-drama.com');
-        AppState.results = parsed.items || [];
-
-        // Save to cache
+        const items = await fetchProviderSections(activeProv, cleanQuery, activeLang);
+        AppState.results = items || [];
         SearchCache.set(cacheKey, AppState.results);
 
         if (AppState.results.length === 0) {
-            showEmpty();
+            showEmpty(cleanQuery, provLabel);
         } else {
-            renderAnimeCards(AppState.results, cleanQuery);
+            renderAnimeCards(AppState.results, cleanQuery, provLabel);
             resolveAllCardEpisodes(AppState.results, sessionId);
-            showToast(`Loaded ${AppState.results.length} dramas`);
+            showToast(`Loaded ${AppState.results.length} dramas (${activeLang})`);
         }
     } catch (err) {
         console.error('[Search Failed]:', err.message);
-        showError(`Could not fetch "${cleanQuery}" (${err.message}). Tap "Retry Search" to try again.`);
+        showError(`Could not fetch from ${provLabel} in ${activeLang} (${err.message}). Tap "Retry Search" to try again.`);
     }
 }
 
@@ -998,14 +1445,18 @@ function getEpisodeTotalText(item) {
 /**
  * Render Anime Cards into Grid
  */
-function renderAnimeCards(items, queryText = '') {
+function renderAnimeCards(items, queryText = '', providerLabel = '') {
     hideAllResults();
     if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+    if (elements.resultsProviderBar) elements.resultsProviderBar.style.display = 'flex';
     if (elements.contentContainer) elements.contentContainer.style.display = 'block';
     if (elements.animeGrid) elements.animeGrid.style.display = 'grid';
 
+    const pLabel = providerLabel || getProviderLabel(AppState.activeProvider);
     if (elements.resultsQuery) {
-        elements.resultsQuery.innerHTML = queryText ? `Search results for <strong>"${escapeHtml(queryText)}"</strong>` : 'Dramas';
+        elements.resultsQuery.innerHTML = queryText 
+            ? `Search for <strong>"${escapeHtml(queryText)}"</strong> in <em>${escapeHtml(pLabel)}</em>` 
+            : `Featured in <strong>${escapeHtml(pLabel)}</strong>`;
     }
     if (elements.resultsCount) {
         elements.resultsCount.textContent = `${items.length} dramas`;
@@ -1052,14 +1503,8 @@ function attachCardListeners(containerEl, items, isBookmarkView = false) {
                 return;
             }
 
-            // Tapping anywhere on the card launches the reel player directly at last watched episode!
-            const prog = UserDataManager.getDramaProgress(item.url);
-            const targetEp = (prog.lastWatchedEp && prog.lastWatchedEp > 0) ? prog.lastWatchedEp : 1;
-            const epUrl = (item.episodeList && item.episodeList[targetEp - 1]) 
-                ? item.episodeList[targetEp - 1].url 
-                : getEpisodeWatchUrl(item.url, targetEp);
-
-            playEpisode(item, targetEp, epUrl);
+            // Tapping on the card opens Quick View modal to choose episode and see drama details!
+            openQuickView(item, cardEl);
         });
 
         // Image load fallback with anime initials
@@ -1158,7 +1603,7 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
     const hasEpisodes = (item.episodes && item.episodes > 0) || (item.episodeList && item.episodeList.length > 0);
     const episodeTotalText = getEpisodeTotalText(item);
     const badgeClass = hasEpisodes ? 'card-badge-top-left' : 'card-badge-top-left badge-resolving';
-    const typeBadge = (item.tags && item.tags.some(t => /dub/i.test(t))) ? 'DUB' : 'SUB';
+    const providerName = getItemProviderName(item);
     const tagsHtml = (item.tags || []).slice(0, 3).map(tag => 
         `<span class="card-tag">#${escapeHtml(tag)}</span>`
     ).join('');
@@ -1192,7 +1637,7 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
         <article class="anime-card" id="${cardId}" tabindex="0" role="button" aria-label="${title}">
             <div class="card-poster-wrap">
                 <span class="${badgeClass}" id="card-ep-badge-${index}">🎬 ${escapeHtml(episodeTotalText)}</span>
-                <span class="card-badge-top-right">${typeBadge}</span>
+                <span class="card-badge-top-right card-provider-badge">${escapeHtml(providerName)}</span>
                 ${posterMarkup}
                 <div class="poster-gradient"></div>
                 ${progressBarMarkup}
@@ -1235,9 +1680,13 @@ async function openQuickView(item, cardEl = null) {
 
     // Metadata badges
     const episodeTotalText = getEpisodeTotalText(item);
+    const providerName = getItemProviderName(item);
     if (elements.quickViewMeta) {
         const tagsHtml = (item.tags || []).map(t => `<span class="detail-badge">#${escapeHtml(t)}</span>`).join('');
         elements.quickViewMeta.innerHTML = `
+            <span class="detail-badge" id="quick-view-provider-badge" style="background:linear-gradient(135deg, #ff2442, #e50914); color:#fff; border-color:transparent; font-weight:700;">
+                ${escapeHtml(providerName)}
+            </span>
             <span class="detail-badge" id="quick-view-total-badge" style="background:rgba(0, 242, 254, 0.15); color:var(--accent-cyan); border-color:rgba(0, 242, 254, 0.3)">
                 🎬 ${escapeHtml(episodeTotalText)}
             </span>
@@ -1269,6 +1718,10 @@ async function openQuickView(item, cardEl = null) {
             item.description = detailData.description;
         }
 
+        if (detailData.canonicalUrl) {
+            item.url = detailData.canonicalUrl;
+        }
+
         if (detailData.episodeList && detailData.episodeList.length > 0) {
             item.episodeList = detailData.episodeList;
             item.episodes = detailData.episodeCount || detailData.episodeList.length;
@@ -1296,9 +1749,10 @@ async function openQuickView(item, cardEl = null) {
     if (elements.quickViewEpisodesLoading) elements.quickViewEpisodesLoading.style.display = 'none';
     const totalEps = item.episodes || 60;
     const cleanBase = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+    const activeLang = AppState.currentLang || 'en-US';
     const fallbackList = Array.from({ length: totalEps }, (_, i) => ({
         number: `EP ${i + 1}`,
-        url: `${cleanBase}/${i + 1}?lang=en-US`
+        url: `${cleanBase}/${i + 1}?lang=${encodeURIComponent(activeLang)}`
     }));
 
     item.episodeList = fallbackList;
@@ -1347,11 +1801,24 @@ function closeQuickView() {
  * Dedicated helper to construct valid episode watch URLs
  * Formats: https://narto-drama.com/detail/watch/{slug}/{epNum}?lang=en-US
  */
-function getEpisodeWatchUrl(dramaUrl, epNum = 1) {
+function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
     if (!dramaUrl) return '';
+    const activeLang = lang || AppState.currentLang || 'en-US';
+
+    // If already an episode URL with episode number, preserve and normalize language
+    if (/\/watch\/[^?#]+\/\d+/i.test(dramaUrl)) {
+        const base = dramaUrl.split('?')[0];
+        return `${base}?lang=${encodeURIComponent(activeLang)}`;
+    }
+
+    // Never append /{epNum} to /search/import URLs directly (that leads to 404)
+    if (dramaUrl.includes('/search/import')) {
+        return dramaUrl;
+    }
+
     let clean = dramaUrl.split('?')[0].replace(/\/+$/, '');
     clean = clean.replace(/\/\d+$/, '');
-    return `${clean}/${epNum}?lang=en-US`;
+    return `${clean}/${epNum}?lang=${encodeURIComponent(activeLang)}`;
 }
 
 /**
@@ -1365,7 +1832,19 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     PlayerState.currentEpisodeNumber = epNum;
 
     // Deduce clean episode watch URL
-    const cleanWatchUrl = getEpisodeWatchUrl(drama.url || episodeUrl, epNum);
+    let cleanWatchUrl = '';
+    if (episodeUrl && !episodeUrl.includes('/search/import')) {
+        cleanWatchUrl = getEpisodeWatchUrl(episodeUrl, epNum);
+    }
+    if (!cleanWatchUrl) {
+        const matchingEp = drama.episodeList?.find(e => Number(e.number) === epNum || e.number === `EP ${epNum}`);
+        if (matchingEp && matchingEp.url && !matchingEp.url.includes('/search/import')) {
+            cleanWatchUrl = getEpisodeWatchUrl(matchingEp.url, epNum);
+        }
+    }
+    if (!cleanWatchUrl) {
+        cleanWatchUrl = getEpisodeWatchUrl(drama.url, epNum);
+    }
     PlayerState.currentEpisodeUrl = cleanWatchUrl;
 
     // Update Player Modal UI
@@ -1397,6 +1876,28 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
     // Open Player Modal
     openModal(elements.playerModal);
+
+    // If cleanWatchUrl is a /search/import URL, resolve it first to the canonical detail/watch URL
+    if (cleanWatchUrl.includes('/search/import')) {
+        try {
+            const { html: importHtml } = await fetchFastHtml(cleanWatchUrl);
+            const detailData = DramaParser.parseEpisodesFromDetailPage(importHtml, 'https://narto-drama.com');
+            if (detailData.canonicalUrl) {
+                drama.url = detailData.canonicalUrl;
+            }
+            if (detailData.episodeList && detailData.episodeList.length > 0) {
+                drama.episodeList = detailData.episodeList;
+                PlayerState.episodes = detailData.episodeList;
+                const foundEp = detailData.episodeList.find(e => Number(e.number) === epNum) || detailData.episodeList[0];
+                if (foundEp && foundEp.url) {
+                    cleanWatchUrl = foundEp.url;
+                }
+            } else if (detailData.canonicalUrl) {
+                cleanWatchUrl = getEpisodeWatchUrl(detailData.canonicalUrl, epNum);
+            }
+        } catch (_) {}
+        PlayerState.currentEpisodeUrl = cleanWatchUrl;
+    }
 
     // If stream data for this entire drama is ALREADY cached, instant playback!
     const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
@@ -1568,6 +2069,25 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
         return;
     }
 
+    // Detect stream format BEFORE wrapping in CF_WORKER_URL
+    // (because Worker wrapping encodes the URL inside a query param like ?url=... which masks file extensions)
+    const cleanRawUrl = (streamUrl || '').split('?')[0].toLowerCase();
+    const isExplicitM3u8 = cleanRawUrl.endsWith('.m3u8') || cleanRawUrl.endsWith('.m3u') || (streamUrl || '').toLowerCase().includes('.m3u8');
+    const isExplicitMp4 = cleanRawUrl.endsWith('.mp4') || cleanRawUrl.endsWith('.webm') || cleanRawUrl.endsWith('.m4v') || (streamUrl || '').toLowerCase().includes('.mp4');
+
+    // ONLY treat as HLS if it's explicitly an M3U8 playlist or flagged as HLS AND NOT an MP4 file.
+    // Hls.js is strictly for HLS (.m3u8) playlists — feeding an MP4 into Hls.js causes
+    // manifestParsingError, canceled transfers, and NS_ERROR_NET_PARTIAL_TRANSFER.
+    const isHls = !isExplicitMp4 && (isExplicitM3u8 || isHlsHint);
+
+    // Route stream URL through CF Worker when configured, UNLESS host is in EXCLUDED_PROXY_HOSTS
+    // (e.g. volcengine-forward.shorttv.live has its own auth_key / CORS and rejects worker proxying)
+    const bypassProxy = shouldBypassProxy(streamUrl);
+    if (!bypassProxy && CF_WORKER_URL && CF_WORKER_URL.trim() && streamUrl && !streamUrl.startsWith(CF_WORKER_URL)) {
+        const workerBase = CF_WORKER_URL.replace(/\/$/, '');
+        streamUrl = `${workerBase}/?url=${encodeURIComponent(streamUrl)}`;
+    }
+
     PlayerState.currentStreamUrl = streamUrl;
     PlayerState.currentStreamKey = streamKey;
     PlayerState.currentStreamExp = streamExp;
@@ -1589,17 +2109,14 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
     videoEl.setAttribute('x5-playsinline', '');
-    videoEl.setAttribute('referrerpolicy', 'no-referrer');
+    // Note: Do NOT suppress referrerpolicy here — CDN (hakunaymatata.com) requires
+    // a Referer header to be present. Sending no-referrer causes HTTP 428 errors.
     videoEl.load();
 
     // Set blurred backdrop poster if drama poster available
     if (elements.reelBackdrop && PlayerState.currentDrama?.poster) {
         elements.reelBackdrop.style.backgroundImage = `url("${PlayerState.currentDrama.poster}")`;
     }
-
-    // Determine format
-    const isExplicitMp4 = /\.mp4(?:\?|$)/i.test(streamUrl) || /\.webm(?:\?|$)/i.test(streamUrl);
-    const isHls = isHlsHint || /\.m3u8(?:\?|$)/i.test(streamUrl) || !isExplicitMp4;
 
     // Show buffering indicator
     if (elements.playerBuffering) {
@@ -1613,14 +2130,15 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     }
 
     // Adaptive playback strategy:
-    // On modern browsers (Chrome/Firefox/Edge/Samsung Internet), almost all drama streams are HLS, so route through Hls.js
+    // 1. If it's an HLS playlist (.m3u8), route through Hls.js (or native Apple HLS on Safari)
+    // 2. If it's an MP4 or WebM video file, ALWAYS play directly with native HTML5 <video>
     if (isHls && window.Hls && Hls.isSupported()) {
         loadWithHlsJs(streamUrl, videoEl, false, streamKey, streamExp);
-    } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+    } else if (isHls && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
         // Native HLS for Safari on iOS / macOS
         loadNativeVideo(streamUrl, videoEl, true);
     } else {
-        // Direct MP4 / WebM
+        // Direct MP4 / WebM / native HTML5 video
         loadNativeVideo(streamUrl, videoEl, false);
     }
 }
@@ -1669,13 +2187,40 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
     hls.on(Hls.Events.ERROR, (event, data) => {
         const statusCode = data.response?.code || data.response?.status || data.context?.xhr?.status;
 
-        // Immediate HTTP 410 detection: close player and inform user
+        // HTTP 410 detection: check if active episode has an alternative fallback stream URL first
         if (statusCode === 410) {
+            const activeEp = PlayerState.episodes?.find(e => Number(e.number) === PlayerState.currentEpisodeNumber);
+            if (activeEp && activeEp.fallbackUrl && activeEp.fallbackUrl !== streamUrl) {
+                console.warn('[Player] 410 on primary stream, retrying with fallback URL:', activeEp.fallbackUrl);
+                hls.destroy();
+                PlayerState.hls = null;
+                const fallback = activeEp.fallbackUrl;
+                activeEp.fallbackUrl = null; // prevent infinite loop
+                loadStreamInVideo(fallback, true, activeEp.key, activeEp.exp);
+                return;
+            }
             hls.destroy();
             PlayerState.hls = null;
             closePlayer();
             showToast('This episode is not available at this moment');
             return;
+        }
+
+        // If HTTP 403 occurs on a proxied URL, automatically fallback to direct unproxied stream!
+        // (Certain CDNs like shorttv.live reject worker proxying but work directly with CORS)
+        if (statusCode === 403 && streamUrl.includes('?url=')) {
+            try {
+                const u = new URL(streamUrl);
+                const rawUrl = u.searchParams.get('url');
+                if (rawUrl) {
+                    const directUrl = decodeURIComponent(rawUrl);
+                    console.warn(`[Player] Worker returned 403 for proxied HLS stream. Retrying directly with:`, directUrl);
+                    hls.destroy();
+                    PlayerState.hls = null;
+                    loadStreamInVideo(directUrl, true, streamKey, streamExp);
+                    return;
+                }
+            } catch (_) {}
         }
 
         if (!data.fatal) return;
@@ -1685,12 +2230,8 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
                 if (networkRetryCount === 0) {
                     networkRetryCount++;
                     hls.startLoad();
-                } else if (!isProxyAttempt) {
-                    // Direct manifest fetch failed due to CORS/network, retry via raw proxy
-                    hls.destroy();
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(streamUrl)}`;
-                    loadWithHlsJs(proxyUrl, videoEl, true, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
                 } else {
+                    // Network retry exhausted — try native video player as last resort
                     hls.destroy();
                     loadNativeVideo(streamUrl, videoEl, false);
                 }
@@ -1714,7 +2255,9 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
     videoEl.onerror = async () => {
         const err = videoEl.error;
 
-        // 1. Probe for HTTP 410 status code
+        // 1. Probe for HTTP 410 status code (expired/unavailable episode)
+        //    Skip probe if URL is from a known video CDN that rejects HEAD fetch with 428
+        //    (they require Range requests from a browser video element, not plain fetch)
         try {
             const probe = await fetchWithTimeout(streamUrl, { method: 'HEAD', timeout: 3500 });
             if (probe.status === 410) {
@@ -1722,12 +2265,20 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
                 showToast('This episode is not available at this moment');
                 return;
             }
+            // 428 = CDN requires browser-native video request (not a JS fetch)
+            // Ignore it — the video element itself will handle the actual request correctly
+            // if we route through HLS.js below
         } catch (_) {}
 
-        // If native video failed on Chrome/Firefox because it's an HLS stream passed to <video src>:
+        // If native video failed because it's actually an HLS stream (common on Chrome/Firefox):
+        // NEVER route MP4 video files into Hls.js
         if (err && err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && window.Hls && Hls.isSupported() && !PlayerState.hls) {
-            loadWithHlsJs(streamUrl, videoEl, false, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
-            return;
+            const raw = (streamUrl || '').toLowerCase();
+            const isMp4 = raw.includes('.mp4') || raw.includes('.webm') || raw.includes('.m4v');
+            if (!isMp4) {
+                loadWithHlsJs(streamUrl, videoEl, false, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
+                return;
+            }
         }
 
         // Check if there is an alternative play URL in active episode
@@ -1739,10 +2290,36 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
             }
         }
 
+        // If native video failed on a proxied URL, automatically fallback to direct unproxied URL!
+        if (streamUrl.includes('?url=')) {
+            try {
+                const u = new URL(streamUrl);
+                const rawUrl = u.searchParams.get('url');
+                if (rawUrl) {
+                    const directUrl = decodeURIComponent(rawUrl);
+                    console.warn(`[Player] Proxied native video failed. Retrying directly with:`, directUrl);
+                    loadStreamInVideo(directUrl, false, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
+                    return;
+                }
+            } catch (_) {}
+        }
+
+        // If a network interruption occurs while video was already playing, attempt seamless resume
+        if (err && err.code === MediaError.MEDIA_ERR_NETWORK && videoEl.currentTime > 0) {
+            const resumePos = videoEl.currentTime;
+            console.warn(`[Video] Network interruption at ${resumePos.toFixed(1)}s, attempting resume...`);
+            setTimeout(() => {
+                videoEl.src = streamUrl;
+                videoEl.currentTime = resumePos;
+                videoEl.play().catch(() => {});
+            }, 600);
+            return;
+        }
+
         if (err && err.code === MediaError.MEDIA_ERR_DECODE) {
             showPlayerError('Failed to decode video stream (unsupported codec or corrupt video).');
         } else if (err && err.code === MediaError.MEDIA_ERR_NETWORK) {
-            showPlayerError('Network connection error while streaming episode.');
+            showPlayerError('Network connection error while streaming episode. Tap Retry to reconnect.');
         } else {
             showPlayerError('Video playback error. Tap Retry to reconnect.');
         }
@@ -2238,18 +2815,30 @@ function saveProxySettings() {
  */
 function showLoading() {
     hideAllResults();
+    if (elements.resultsProviderBar) elements.resultsProviderBar.style.display = 'flex';
     if (elements.contentContainer) elements.contentContainer.style.display = 'block';
     if (elements.skeletonGrid) elements.skeletonGrid.style.display = 'grid';
 }
 
-function showEmpty() {
+function showEmpty(queryText = '', providerLabel = '') {
     hideAllResults();
+    if (elements.resultsProviderBar) elements.resultsProviderBar.style.display = 'flex';
     if (elements.contentContainer) elements.contentContainer.style.display = 'block';
-    if (elements.emptyState) elements.emptyState.style.display = 'block';
+    if (elements.emptyState) {
+        elements.emptyState.style.display = 'block';
+        const pLabel = providerLabel || getProviderLabel(AppState.activeProvider);
+        const descEl = elements.emptyState.querySelector('.state-desc');
+        if (descEl) {
+            descEl.textContent = queryText 
+                ? `No dramas found for "${queryText}" in ${pLabel}. Try another search term or switch provider above.`
+                : `No dramas currently available for ${pLabel}. Switch to another provider above.`;
+        }
+    }
 }
 
 function showError(message) {
     hideAllResults();
+    if (elements.resultsProviderBar) elements.resultsProviderBar.style.display = 'flex';
     if (elements.contentContainer) elements.contentContainer.style.display = 'block';
     if (elements.errorState) elements.errorState.style.display = 'block';
     if (elements.errorDesc) elements.errorDesc.textContent = message || 'An error occurred while fetching drama data.';

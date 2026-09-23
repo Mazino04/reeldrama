@@ -77,6 +77,48 @@
                 </form>
             </div>
 
+            <!-- Provider Selection Tabs (5 Providers Only) -->
+            <div class="provider-tabs-wrap hero-provider-tabs" id="hero-provider-tabs">
+                <span class="provider-tabs-label">Provider:</span>
+                <div class="provider-tabs" role="tablist" aria-label="Select drama provider">
+                    <button class="provider-tab-pill active" type="button" role="tab" data-provider="dramabox" aria-selected="true">
+                        <span class="provider-tab-icon">📦</span>
+                        <span class="provider-tab-text">DramaBox</span>
+                    </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="reelshort" aria-selected="false">
+                        <span class="provider-tab-icon">⚡</span>
+                        <span class="provider-tab-text">ReelShort</span>
+                    </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="netshort" aria-selected="false">
+                        <span class="provider-tab-icon">🌐</span>
+                        <span class="provider-tab-text">NetShort</span>
+                    </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="goodshort" aria-selected="false">
+                        <span class="provider-tab-icon">✨</span>
+                        <span class="provider-tab-text">GoodShort</span>
+                    </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="dramashorts" aria-selected="false">
+                        <span class="provider-tab-icon">🎬</span>
+                        <span class="provider-tab-text">DramaShorts</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Search Language Selection (en-US / es-ES) -->
+            <div class="lang-tabs-wrap hero-lang-tabs" id="hero-lang-tabs">
+                <span class="lang-tabs-label">Language:</span>
+                <div class="lang-tabs" role="radiogroup" aria-label="Search Language">
+                    <button class="lang-tab-pill active" type="button" data-lang="en-US" aria-checked="true">
+                        <span class="lang-tab-flag">🇺🇸</span>
+                        <span class="lang-tab-text">English (en-US)</span>
+                    </button>
+                    <button class="lang-tab-pill" type="button" data-lang="es-ES" aria-checked="false">
+                        <span class="lang-tab-flag">🇪🇸</span>
+                        <span class="lang-tab-text">Español (es-ES)</span>
+                    </button>
+                </div>
+            </div>
+
             <!-- Quick Suggestions under the Search Bar -->
             <div class="search-hints" id="search-hints">
                 <span>Try:</span>
@@ -97,11 +139,41 @@
             </div>
 
             <div class="results-actions">
+                <select class="lang-select" id="lang-select" aria-label="Search language">
+                    <option value="en-US">🇺🇸 English (en-US)</option>
+                    <option value="es-ES">🇪🇸 Español (es-ES)</option>
+                </select>
                 <select class="sort-select" id="sort-select" aria-label="Sort dramas">
                     <option value="default">Sort by: Relevance</option>
                     <option value="title-asc">Title: A to Z</option>
                     <option value="title-desc">Title: Z to A</option>
                 </select>
+            </div>
+        </div>
+
+        <!-- Provider Selector Bar in Results View -->
+        <div class="results-provider-bar" id="results-provider-bar" style="display: none;">
+            <div class="provider-tabs" id="results-provider-tabs" role="tablist" aria-label="Filter by drama provider">
+                <button class="provider-tab-pill active" type="button" role="tab" data-provider="dramabox" aria-selected="true">
+                    <span class="provider-tab-icon">📦</span>
+                    <span class="provider-tab-text">DramaBox</span>
+                </button>
+                <button class="provider-tab-pill" type="button" role="tab" data-provider="reelshort" aria-selected="false">
+                    <span class="provider-tab-icon">⚡</span>
+                    <span class="provider-tab-text">ReelShort</span>
+                </button>
+                <button class="provider-tab-pill" type="button" role="tab" data-provider="netshort" aria-selected="false">
+                    <span class="provider-tab-icon">🌐</span>
+                    <span class="provider-tab-text">NetShort</span>
+                </button>
+                <button class="provider-tab-pill" type="button" role="tab" data-provider="goodshort" aria-selected="false">
+                    <span class="provider-tab-icon">✨</span>
+                    <span class="provider-tab-text">GoodShort</span>
+                </button>
+                <button class="provider-tab-pill" type="button" role="tab" data-provider="dramashorts" aria-selected="false">
+                    <span class="provider-tab-icon">🎬</span>
+                    <span class="provider-tab-text">DramaShorts</span>
+                </button>
             </div>
         </div>
 
@@ -240,7 +312,6 @@
                     webkit-playsinline
                     x5-playsinline
                     preload="auto"
-                    referrerpolicy="no-referrer"
                 ></video>
 
                 <!-- Center Tap Play/Pause Ripple Indicator -->
