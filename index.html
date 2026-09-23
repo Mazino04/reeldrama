@@ -25,12 +25,18 @@
         </div>
         <div class="nav-actions">
             <button class="nav-bookmark-btn" id="nav-bookmark-btn" type="button" title="View My List / Watch Later">
-                <span class="bookmark-icon">🔖</span>
+                <svg class="btn-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                </svg>
                 <span class="bookmark-text">My List</span>
                 <span class="bookmark-badge" id="nav-bookmark-count" style="display: none;">0</span>
             </button>
             <button class="nav-install-btn" id="pwa-install-btn" type="button" title="Install ReelDrama App">
-                <span class="install-icon">⬇</span>
+                <svg class="btn-svg-icon install-bounce" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
                 <span class="install-text">Install App</span>
             </button>
         </div>
@@ -145,7 +151,10 @@
                         <span>Back to Home</span>
                     </button>
                     <h2 class="my-list-title">
-                        <span>🔖</span> My List
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                        My List
                     </h2>
                     <span class="my-list-count-badge" id="bookmarks-count-badge">0 saved</span>
                 </div>
@@ -371,17 +380,17 @@
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.5;">
-                    When deployed on GitHub Pages, requests to external domains are subject to browser CORS. We automatically route through reliable proxies, but you can configure preferences here.
+                    Direct fetch to narto-drama.com is tried first (no proxy). If blocked by CORS (GitHub Pages), the app automatically falls back to <strong>AllOrigins</strong> then <strong>CodeTabs</strong>. You can override this here.
                 </p>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
                         PROXY METHOD
                     </label>
                     <select class="sort-select" id="proxy-select" style="width: 100%; padding: 10px;">
-                        <option value="auto">Auto Failover (AllOrigins &rarr; CodeTabs &rarr; Direct)</option>
-                        <option value="allorigins">AllOrigins (allorigins.win)</option>
-                        <option value="codetabs">CodeTabs (api.codetabs.com)</option>
-                        <option value="direct">Direct Fetch (Local / Extension)</option>
+                        <option value="auto">Auto (Direct → AllOrigins → CodeTabs)</option>
+                        <option value="allorigins">AllOrigins only (allorigins.win)</option>
+                        <option value="codetabs">CodeTabs only (api.codetabs.com)</option>
+                        <option value="direct">Direct Fetch (no proxy — local / extension)</option>
                         <option value="custom">Custom Proxy URL</option>
                     </select>
                 </div>

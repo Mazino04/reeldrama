@@ -1,10 +1,18 @@
 /**
- * AnimeDrama - Main Application Controller
- * Optimized & Clean:
- * - On-demand fetching: Only 1 request on search, and 1 request on card click (~350ms)
- * - Zero background batch spam
- * - Silent console (only true network failures logged)
+ * ReelDrama — Main Application Controller
+ *
+ * CORS Proxy Configuration
+ * ─────────────────────────────────────────────────────────────────────────────
+ * If you have deployed the Cloudflare Worker (worker.js), paste your Worker URL
+ * below. This makes the app fully reliable on GitHub Pages with zero CORS errors.
+ *
+ * Example:
+ *   const CF_WORKER_URL = 'https://reeldrama-proxy.YOUR-NAME.workers.dev';
+ *
+ * Leave as empty string ('') to use the built-in public proxy fallback chain.
+ * ─────────────────────────────────────────────────────────────────────────────
  */
+const CF_WORKER_URL = 'https://bold-hill-9a84.aleperaza45.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
 
 // Application State & Caches
 const AppState = {
@@ -788,9 +796,23 @@ window.searchByKeyword = function(keyword) {
 };
 
 /**
- * HIGH-AVAILABILITY MULTI-TIER PROXY ENGINE
- * Designed for mobile networks and GitHub Pages cross-origin hosting
- * Staggers requests to prevent single-proxy timeouts from blocking the app
+ * FETCH ENGINE — Direct-First, Sequential Proxy Waterfall
+ *
+ * Strategy:
+ *  1. Try direct fetch first (no proxy at all). Works when:
+ *     - Running on localhost / dev
+ *     - narto-drama.com adds CORS headers in the future
+ *     - Browser extension strips CORS restrictions
+ *  2. If direct is blocked, fall through to proxies silently.
+ *  3. Only use proxies that are known to actually set Access-Control-Allow-Origin
+ *     and are not currently blacklisting narto-drama.com:
+ *       • allorigins.win/raw  (most reliable, retry with /get JSON if raw fails)
+ *       • api.codetabs.com    (sometimes 503 but worth a try)
+ *
+ * Removed dead proxies that fail for this domain:
+ *   ✗ corsproxy.io      → HTTP 403 (blocks streaming/drama sites)
+ *   ✗ proxy.cors.sh     → null CORS status (requires paid API key)
+ *   ✗ thingproxy        → null CORS status (doesn't send CORS headers)
  */
 async function fetchFastHtml(targetUrl) {
     if (!targetUrl || typeof targetUrl !== 'string' || /^file:\/\//i.test(targetUrl) || /^file:/i.test(targetUrl)) {
@@ -803,141 +825,161 @@ async function fetchFastHtml(targetUrl) {
 
     const method = AppState.proxyMethod || 'auto';
 
-    // Helper to validate that a response is real drama HTML and not a proxy 502/522 error page
+    /** Validate that a response body is real drama HTML, not a proxy error page */
     function isValidDramaHtml(text) {
         if (!text || typeof text !== 'string' || text.length < 500) return false;
-        if (text.includes('502 Bad Gateway') || text.includes('522 Connection timed out') || text.includes('Cloudflare Ray ID')) {
-            return false;
-        }
+        // Reject known proxy/CDN error page signatures (precise phrases, not bare numbers)
+        if (
+            text.includes('502 Bad Gateway') ||
+            text.includes('Error 520') ||
+            text.includes('522 Connection Timed Out') ||
+            text.includes('524 A Timeout Occurred') ||
+            text.includes('Cloudflare Ray ID') ||
+            text.includes('503 Service Unavailable') ||
+            text.includes('Too Many Requests') ||
+            text.includes('Web Server Returned an Unknown Error')
+        ) return false;
         return text.includes('<html') || text.includes('<body') || text.includes('<!DOCTYPE') || text.includes('drama');
     }
 
-    // 1. User Custom Proxy
+    /** Try a single fetch, returns html string or throws */
+    async function tryFetch(url, opts = {}) {
+        const res = await fetchWithTimeout(url, opts);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.text();
+    }
+
+    /** Try a single fetch and return JSON, or throws */
+    async function tryFetchJson(url, opts = {}) {
+        const res = await fetchWithTimeout(url, opts);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+    }
+
+    // ─── 1. User Custom Proxy ────────────────────────────────────────────────
     if (AppState.customProxy && AppState.customProxy.trim()) {
         const customUrl = AppState.customProxy.replace('{url}', encodeURIComponent(targetUrl));
         try {
-            const res = await fetchWithTimeout(customUrl, { timeout: 12000 });
-            if (!res.ok) throw new Error(`Custom Proxy status ${res.status}`);
-            const text = await res.text();
+            const text = await tryFetch(customUrl, { timeout: 14000 });
             if (isValidDramaHtml(text)) {
                 DetailCache.set(targetUrl, text);
                 return { html: text, source: 'Custom Proxy' };
             }
-        } catch (err) {
-            console.warn('[Custom Proxy Error]:', err.message);
-        }
+        } catch (_) { /* fall through */ }
     }
 
-    // 2. Specific method selected by user
+    // ─── 2. Force-direct mode ────────────────────────────────────────────────
     if (method === 'direct') {
-        const res = await fetchWithTimeout(targetUrl, { mode: 'cors', timeout: 8000 });
-        if (!res.ok) throw new Error(`Direct Fetch status ${res.status}`);
-        const text = await res.text();
+        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: 10000 });
         DetailCache.set(targetUrl, text);
-        return { html: text, source: 'Direct Fetch' };
+        return { html: text, source: 'Direct' };
     }
 
+    // ─── 3. allorigins single-method ─────────────────────────────────────────
     if (method === 'allorigins') {
-        const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
-        if (!res.ok) throw new Error(`AllOrigins status ${res.status}`);
-        const text = await res.text();
-        if (!isValidDramaHtml(text)) throw new Error('Invalid or empty response from AllOrigins');
-        DetailCache.set(targetUrl, text);
-        return { html: text, source: 'AllOrigins' };
+        // raw endpoint
+        try {
+            const text = await tryFetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
+            if (isValidDramaHtml(text)) { DetailCache.set(targetUrl, text); return { html: text, source: 'AllOrigins Raw' }; }
+        } catch (_) { /* try json fallback */ }
+        // json endpoint (different server infrastructure)
+        const data = await tryFetchJson(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
+        if (!data || !data.contents || !isValidDramaHtml(data.contents)) throw new Error('AllOrigins returned invalid content');
+        DetailCache.set(targetUrl, data.contents);
+        return { html: data.contents, source: 'AllOrigins JSON' };
     }
 
+    // ─── 4. codetabs single-method ───────────────────────────────────────────
     if (method === 'codetabs') {
-        const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
-        if (!res.ok) throw new Error(`CodeTabs status ${res.status}`);
-        const text = await res.text();
-        if (!isValidDramaHtml(text)) throw new Error('Invalid or empty response from CodeTabs');
+        const text = await tryFetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
+        if (!isValidDramaHtml(text)) throw new Error('CodeTabs returned invalid content');
         DetailCache.set(targetUrl, text);
         return { html: text, source: 'CodeTabs' };
     }
 
-    // 3. 'auto' mode: Intelligent Staggered Race across multiple proxies + direct fetch
+    // ─── 5. AUTO mode: sequential waterfall ──────────────────────────────────
+    //
+    // Tries each source in order. As soon as one succeeds, we stop.
+    // Errors are collected silently — only logged if ALL fail.
+    //
     const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const errors = [];
 
-    const candidates = [
-        // Candidate 1: AllOrigins Raw (direct raw streaming without JSON encoding overhead)
-        {
-            name: 'AllOrigins Raw',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const text = await res.text();
-                if (!isValidDramaHtml(text)) throw new Error('Invalid or error payload');
-                return text;
+    // Step A: Cloudflare Worker (your own proxy — zero CORS issues, most reliable)
+    // Only runs if CF_WORKER_URL is configured at the top of this file.
+    if (CF_WORKER_URL && CF_WORKER_URL.trim()) {
+        try {
+            const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
+            const text = await tryFetch(workerUrl, { timeout: 15000 });
+            if (isValidDramaHtml(text)) {
+                DetailCache.set(targetUrl, text);
+                return { html: text, source: 'CF Worker' };
             }
-        },
-        // Candidate 2: CodeTabs Proxy
-        {
-            name: 'CodeTabs',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const text = await res.text();
-                if (!isValidDramaHtml(text)) throw new Error('Invalid or error payload');
-                return text;
-            }
-        },
-        // Candidate 3: Direct Fetch (instant on localhost or if browser permits CORS)
-        {
-            name: 'Direct Fetch',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(targetUrl, { mode: 'cors', timeout: isLocalhost ? 5000 : 7000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const text = await res.text();
-                if (!isValidDramaHtml(text)) throw new Error('Empty payload');
-                return text;
-            }
-        },
-        // Candidate 4: AllOrigins JSON GET (fallback)
-        {
-            name: 'AllOrigins GET',
-            fetcher: async () => {
-                const res = await fetchWithTimeout(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, { timeout: 12000 });
-                if (!res.ok) throw new Error(`Status ${res.status}`);
-                const data = await res.json();
-                if (!data || !data.contents || !isValidDramaHtml(data.contents)) throw new Error('Empty JSON contents');
-                return data.contents;
-            }
+            errors.push('CF Worker: invalid content');
+        } catch (e) {
+            errors.push(`CF Worker: ${e.message}`);
         }
-    ];
-
-    // If on localhost, try direct fetch first
-    if (isLocalhost) {
-        candidates.unshift(candidates.splice(2, 1)[0]);
     }
 
-    // Staggered execution: starts candidate 0 immediately, candidate 1 at 1200ms, candidate 2 at 2400ms...
-    // The FIRST candidate that completes with valid drama HTML wins immediately!
-    return new Promise((resolve, reject) => {
-        let isResolved = false;
-        let errors = [];
+    // Step B: Direct fetch — no proxy. Fast-fail (3s) to avoid blocking.
+    // Works on localhost or if narto-drama.com ever adds CORS headers.
+    try {
+        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: isLocalhost ? 5000 : 3000 });
+        if (isValidDramaHtml(text)) {
+            DetailCache.set(targetUrl, text);
+            return { html: text, source: 'Direct' };
+        }
+    } catch (_) {
+        errors.push('Direct: CORS blocked or timeout');
+    }
 
-        candidates.forEach((cand, index) => {
-            const delay = index === 0 ? 0 : (index * 1200);
+    // Step B: AllOrigins raw endpoint
+    try {
+        const text = await tryFetch(
+            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+            { timeout: 15000 }
+        );
+        if (isValidDramaHtml(text)) {
+            DetailCache.set(targetUrl, text);
+            return { html: text, source: 'AllOrigins Raw' };
+        }
+        errors.push('AllOrigins Raw: invalid content');
+    } catch (e) {
+        errors.push(`AllOrigins Raw: ${e.message}`);
+    }
 
-            setTimeout(async () => {
-                if (isResolved) return;
-                try {
-                    const text = await cand.fetcher();
-                    if (!isResolved) {
-                        isResolved = true;
-                        DetailCache.set(targetUrl, text);
-                        resolve({ html: text, source: cand.name });
-                    }
-                } catch (err) {
-                    errors.push(`${cand.name}: ${err.message}`);
-                    if (errors.length === candidates.length && !isResolved) {
-                        isResolved = true;
-                        reject(new Error(errors.join(' | ')));
-                    }
-                }
-            }, delay);
-        });
-    });
+    // Step C: AllOrigins JSON endpoint (different infrastructure than /raw)
+    try {
+        const data = await tryFetchJson(
+            `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
+            { timeout: 15000 }
+        );
+        if (data && data.contents && isValidDramaHtml(data.contents)) {
+            DetailCache.set(targetUrl, data.contents);
+            return { html: data.contents, source: 'AllOrigins JSON' };
+        }
+        errors.push('AllOrigins JSON: invalid content');
+    } catch (e) {
+        errors.push(`AllOrigins JSON: ${e.message}`);
+    }
+
+    // Step D: CodeTabs
+    try {
+        const text = await tryFetch(
+            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+            { timeout: 15000 }
+        );
+        if (isValidDramaHtml(text)) {
+            DetailCache.set(targetUrl, text);
+            return { html: text, source: 'CodeTabs' };
+        }
+        errors.push('CodeTabs: invalid content');
+    } catch (e) {
+        errors.push(`CodeTabs: ${e.message}`);
+    }
+
+    // All routes exhausted
+    throw new Error(`All fetch attempts failed. Try again or check your connection.\n${errors.join(' | ')}`);
 }
 
 /**
