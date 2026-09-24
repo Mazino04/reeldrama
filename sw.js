@@ -1,11 +1,18 @@
 /**
  * ReelDrama - Service Worker
- * Designed for 100% compatibility with GitHub Pages (relative paths & subpaths)
+ * Strategy: Network-First for app shell (CSS/JS/HTML) so updates are always
+ * picked up immediately without requiring a hard refresh.
+ * Fallback to cache when offline.
  */
 
-const CACHE_NAME = 'reeldrama-cache-v34';
+// ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
+// Changing this string forces all clients to delete the old cache and
+// re-fetch every asset fresh from the network on their next visit.
+const CACHE_VERSION = 'v35-' + '2026-09-24';
+const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
+// ─────────────────────────────────────────────────────────────────────────────
 
-// App shell assets to precache (using relative paths for GitHub Pages subfolder compatibility)
+// App shell assets to precache
 const PRECACHE_ASSETS = [
     './',
     './index.html',
@@ -23,11 +30,10 @@ const PRECACHE_ASSETS = [
     'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'
 ];
 
-// URLs/patterns that should bypass SW caching (e.g. streaming video chunks, CORS proxies, external APIs, Firebase, CDNs)
+// URLs that should bypass SW entirely (video streams, APIs, Firebase, CORS proxies)
 function isStreamOrProxyRequest(url) {
     try {
         const reqUrl = new URL(url);
-        // Any request outside the app's origin that is not in PRECACHE_ASSETS should bypass SW
         const isPrecached = PRECACHE_ASSETS.some(asset => url.includes(asset));
         if (reqUrl.origin !== location.origin && !isPrecached) {
             return true;
@@ -53,103 +59,89 @@ function isStreamOrProxyRequest(url) {
     );
 }
 
-// 1. Install Event - Cache Core App Shell
+// ─── INSTALL: Pre-cache app shell ─────────────────────────────────────────────
 self.addEventListener('install', (event) => {
+    // skipWaiting() makes the new SW take over immediately without waiting
+    // for existing tabs to close — critical for mobile where tabs stay open.
     self.skipWaiting();
     event.waitUntil(
         caches.open(CACHE_NAME).then(async (cache) => {
-            // Add assets individually so one non-critical failure does not fail SW installation
             for (const asset of PRECACHE_ASSETS) {
                 try {
-                    await cache.add(asset);
+                    // Fetch with cache-busting so we always get the latest version
+                    const response = await fetch(asset, { cache: 'no-store' });
+                    if (response && response.status === 200) {
+                        await cache.put(asset, response);
+                    }
                 } catch (err) {
-                    console.warn('[SW Precache Warning]', asset, err.message);
+                    console.warn('[SW] Precache warning:', asset, err.message);
                 }
             }
         })
     );
 });
 
-// 2. Activate Event - Clean Up Obsolete Caches
+// ─── ACTIVATE: Delete ALL old caches ──────────────────────────────────────────
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         Promise.all([
+            // Take control of all open tabs immediately
             self.clients.claim(),
-            caches.keys().then((keys) => {
-                return Promise.all(
+            // Wipe every cache that isn't the current version
+            caches.keys().then((keys) =>
+                Promise.all(
                     keys.map((key) => {
                         if (key !== CACHE_NAME) {
+                            console.log('[SW] Deleting old cache:', key);
                             return caches.delete(key);
                         }
                     })
-                );
-            })
+                )
+            )
         ])
     );
 });
 
-// 3. Fetch Event - Stale-While-Revalidate for App Shell, Passthrough for Video Streams
+// ─── FETCH: Network-First for app shell, passthrough for streams ───────────────
 self.addEventListener('fetch', (event) => {
-    // Only handle standard HTTP/HTTPS GET requests
     if (event.request.method !== 'GET') return;
     const url = event.request.url;
 
-    // Direct passthrough for video manifests, TS chunks, and external proxies
-    if (isStreamOrProxyRequest(url)) {
-        return; // Handled directly by browser networking
-    }
+    // Passthrough: video streams, APIs, external proxies
+    if (isStreamOrProxyRequest(url)) return;
 
-    // Handle HTML Navigation requests (Network-First with offline index fallback)
-    if (event.request.mode === 'navigate') {
-        event.respondWith(
-            fetch(event.request)
-                .then((networkResponse) => {
-                    if (networkResponse && networkResponse.status === 200) {
-                        const copy = networkResponse.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-                    }
-                    return networkResponse;
-                })
-                .catch(() => caches.match('./index.html') || caches.match('./'))
-        );
-        return;
-    }
-
-    // Stale-While-Revalidate strategy for static resources (CSS, JS, Fonts, App Icons)
+    // ── Network-First strategy ──────────────────────────────────────────────
+    // Always try the network first. If it succeeds, update the cache and
+    // return the fresh response. If the network fails (offline), fall back
+    // to the cached version so the app still loads.
     event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-            if (cachedResponse) {
-                // Return cached version immediately, revalidate in background
-                fetch(event.request)
-                    .then((networkResponse) => {
-                        if (networkResponse && networkResponse.status === 200) {
-                            const copy = networkResponse.clone();
-                            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-                        }
-                    })
-                    .catch(() => {});
-                return cachedResponse;
-            }
+        fetch(event.request, { cache: 'no-store' })
+            .then((networkResponse) => {
+                if (networkResponse && networkResponse.status === 200) {
+                    const copy = networkResponse.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+                }
+                return networkResponse;
+            })
+            .catch(async () => {
+                // Network failed — serve from cache (offline fallback)
+                const cached = await caches.match(event.request);
+                if (cached) return cached;
 
-            // Not in cache: fetch from network
-            return fetch(event.request)
-                .then((networkResponse) => {
-                    if (networkResponse && networkResponse.status === 200) {
-                        const copy = networkResponse.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-                    }
-                    return networkResponse;
-                })
-                .catch((err) => {
-                    if (event.request.destination === 'image') {
-                        return new Response(
-                            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#111522"/></svg>',
-                            { headers: { 'Content-Type': 'image/svg+xml' } }
-                        );
-                    }
-                    throw err;
-                });
-        })
+                // Navigation fallback: serve index.html for offline SPA routing
+                if (event.request.mode === 'navigate') {
+                    return caches.match('./index.html') || caches.match('./');
+                }
+
+                // Image fallback: return a plain dark SVG placeholder
+                if (event.request.destination === 'image') {
+                    return new Response(
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#111522"/></svg>',
+                        { headers: { 'Content-Type': 'image/svg+xml' } }
+                    );
+                }
+
+                throw new Error('Network error and no cached version available.');
+            })
     );
 });
-
