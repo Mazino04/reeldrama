@@ -3,7 +3,7 @@
  * Designed for 100% compatibility with GitHub Pages (relative paths & subpaths)
  */
 
-const CACHE_NAME = 'reeldrama-cache-v1';
+const CACHE_NAME = 'reeldrama-cache-v34';
 
 // App shell assets to precache (using relative paths for GitHub Pages subfolder compatibility)
 const PRECACHE_ASSETS = [
@@ -12,25 +12,44 @@ const PRECACHE_ASSETS = [
     './styles.css',
     './app.js',
     './parser.js',
+    './firebase-config.js',
     './manifest.webmanifest',
+    './icons/reeldrama-logo.png',
+    './icons/reeldrama-icon.png',
+    './icons/favicon.png',
     './icons/icon.svg',
     './icons/icon-192.png',
     './icons/icon-512.png',
     'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'
 ];
 
-// URLs/patterns that should bypass SW caching (e.g. streaming video chunks, CORS proxies, external APIs)
+// URLs/patterns that should bypass SW caching (e.g. streaming video chunks, CORS proxies, external APIs, Firebase, CDNs)
 function isStreamOrProxyRequest(url) {
+    try {
+        const reqUrl = new URL(url);
+        // Any request outside the app's origin that is not in PRECACHE_ASSETS should bypass SW
+        const isPrecached = PRECACHE_ASSETS.some(asset => url.includes(asset));
+        if (reqUrl.origin !== location.origin && !isPrecached) {
+            return true;
+        }
+    } catch (_) {}
+
     return (
         url.includes('.m3u8') ||
         url.includes('.ts') ||
         url.includes('.mp4') ||
+        url.includes('workers.dev') ||
         url.includes('allorigins.win') ||
         url.includes('codetabs.com') ||
         url.includes('cloudflarestorage.com') ||
         url.includes('narto-drama.com') ||
         url.includes('/detail/watch/') ||
-        url.includes('/search?')
+        url.includes('/search?') ||
+        url.includes('firebase') ||
+        url.includes('googleapis.com') ||
+        url.includes('google.com') ||
+        url.includes('firestore') ||
+        url.includes('placeholder')
     );
 }
 
@@ -99,7 +118,21 @@ self.addEventListener('fetch', (event) => {
     // Stale-While-Revalidate strategy for static resources (CSS, JS, Fonts, App Icons)
     event.respondWith(
         caches.match(event.request).then((cachedResponse) => {
-            const fetchPromise = fetch(event.request)
+            if (cachedResponse) {
+                // Return cached version immediately, revalidate in background
+                fetch(event.request)
+                    .then((networkResponse) => {
+                        if (networkResponse && networkResponse.status === 200) {
+                            const copy = networkResponse.clone();
+                            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+                        }
+                    })
+                    .catch(() => {});
+                return cachedResponse;
+            }
+
+            // Not in cache: fetch from network
+            return fetch(event.request)
                 .then((networkResponse) => {
                     if (networkResponse && networkResponse.status === 200) {
                         const copy = networkResponse.clone();
@@ -107,9 +140,15 @@ self.addEventListener('fetch', (event) => {
                     }
                     return networkResponse;
                 })
-                .catch(() => cachedResponse);
-
-            return cachedResponse || fetchPromise;
+                .catch((err) => {
+                    if (event.request.destination === 'image') {
+                        return new Response(
+                            '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" fill="#111522"/></svg>',
+                            { headers: { 'Content-Type': 'image/svg+xml' } }
+                        );
+                    }
+                    throw err;
+                });
         })
     );
 });

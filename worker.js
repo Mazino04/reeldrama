@@ -259,7 +259,39 @@ async function handleRequest(request) {
     // COOKIE / CREDENTIALS
     // ------------------------------------------------------------
 
-    const clientCookie = request.headers.get("Cookie") || request.headers.get("X-ND-Cookie") || reqUrl.searchParams.get("cookie");
+    let clientCookie = request.headers.get("Cookie") || request.headers.get("X-ND-Cookie") || reqUrl.searchParams.get("cookie") || "";
+    const isNartoDramaTarget =
+        host.includes("narto-drama.com") ||
+        host.includes("hakunaymatata.com");
+
+    // ----------------------------------------------------------------
+    // DEFAULT NARTO-DRAMA AUTH COOKIES
+    // Session updated: 2026-09-24 — authenticated as Alex Peraza (ID: 192651)
+    // The "remember_frontend_..." cookie provides long-lived auth persistence.
+    // To refresh: visit https://narto-drama.com/auth/session and copy fresh values.
+    // ----------------------------------------------------------------
+    const DEFAULT_ND_COOKIES = [
+        // Long-lived remember-me token (most important — survives session expiry)
+        'remember_frontend_59ba36addc2b2f9401580f014c7f58ea4e30989d=eyJpdiI6IlhOV2dDTld5bWEvYjJhcTVpNEV5Rnc9PSIsInZhbHVlIjoiSFFZV3YrRForcWRqaGw1NThXdWtBT0tNaGxUdlpuMkZnVUhjVEdKNEdvclNOY1RtZ3hNd2U4OXRBODFJbG1HZnFlN2t6dUZEb3YrNGVlNUFjQWw3MGtieFc2dFh3dDNGdnhwbjVHbHV1WEozM0VtV2s2eGVQa1gybzdKY3dPaTJDL3c5T3IzdEZNZ21KZDBaYmR1bWcrbE11N25WelZJUFlZKy9CbDdMR0llbjhiSmxydGR5dEk3WXNBekNjcktqUS9qQzRTSkhUd2dSSU4wRFowLzltaTA0ZmFoc3RGNUp4S0NaQ3g0YU55MD0iLCJtYWMiOiJjYmJlM2UzZTg2ZTdiYmQxMTA5OWQ2OWUyZGQ5ZjU1ZjhlNWI3ZWJlNzFiMWExNDU0ZTE1MWMxMmNiMGFmYmRjIiwidGFnIjoiIn0=',
+        // Active laravel session (expires 2026-09-25, refreshed by remember-me on next request)
+        'laravel-session=eyJpdiI6InhHUWpubTI1Vzl4YlZqalFOOVFZUUE9PSIsInZhbHVlIjoiU2NaVytaZFZyVU5YbVhKZi9QNFhJYTA0MzdxRy8xK2pubWJFODlORnV3L09uUnM5czVjTy80bDRXS3MwdUpreGI2a1AvdXdwdVcyNW5jUmFZOWllek1WbDVKRnY5M2svRzVUQUY1a1pkNEkweEpRbGdqNFNDVHJuSFNwZ3o5MlkiLCJtYWMiOiI3YjA2ZWNlMTY1NzdkMmJkNzQ1ZWIyNTFmNTlkZGJmMThlNWY4ZGNiYzA0OGZiMDk1MDFlNDc3NGIzMGE1NTA4IiwidGFnIjoiIn0=',
+        // XSRF token (required for some API endpoints)
+        'XSRF-TOKEN=eyJpdiI6IllGR3VwdFpubjJiQ2RRMXVhQzFIYlE9PSIsInZhbHVlIjoiREFBUXE1ZDN5K0hqcEhEbTN2T25NZkpoWDNNQ3I2MVFmejdGM3BFa2tKYUR2dlJoM3BoOG9DdFlSUk95dVczT09iTlBBMWVaR0ZRN1JvUHIyVWp1MUkzdzgyWXFrY1hxQ2prcVlNSmxEcEJxRmpGS29Kb3BCb3QyNzFBSnVwMk0iLCJtYWMiOiIwZTNhNmZhYWU0NzFhNDY0N2NlNjdlOGE5ODJhZWIzYjVkNTY3ZTI3Nzk1NTEzZjY1MTAxZGMwYzE4MzY2OWNjIiwidGFnIjoiIn0='
+    ];
+
+    if (isNartoDramaTarget) {
+        for (const cookiePair of DEFAULT_ND_COOKIES) {
+            const cookieName = cookiePair.split('=')[0];
+            if (!clientCookie.includes(`${cookieName}=`)) {
+                clientCookie = clientCookie ? `${clientCookie}; ${cookiePair}` : cookiePair;
+            }
+        }
+    }
+
+    if (isNartoDramaTarget && !clientCookie.includes("nd_ck=")) {
+        const autoNdCk = `nd_ck=${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        clientCookie = clientCookie ? `${clientCookie}; ${autoNdCk}` : autoNdCk;
+    }
     if (clientCookie) {
         upstreamHeaders.set("Cookie", clientCookie);
     }
@@ -362,6 +394,16 @@ async function handleRequest(request) {
             parsed.href,
             fetchInit
         );
+
+        // Narto Drama on-demand imports can take several seconds to scrape upstream providers.
+        // If an initial 502 or 504 is returned while scraping is completing in background, retry once after 2s.
+        if ((response.status === 502 || response.status === 504) && parsed.pathname.includes('/search/import')) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            response = await fetch(
+                parsed.href,
+                fetchInit
+            );
+        }
 
     } catch (err) {
 
@@ -1067,7 +1109,8 @@ function corsHeaders() {
                 "Range",
                 "Cache-Control",
                 "Pragma",
-                "X-Requested-With"
+                "X-Requested-With",
+                "X-ND-Cookie"
             ].join(", "),
 
         "Access-Control-Expose-Headers":

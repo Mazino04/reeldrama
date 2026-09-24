@@ -29,7 +29,12 @@ A minimalist, high-performance static web application built to be hosted on **Gi
    - Dynamically fetches the drama's detail HTML page to extract the **real episode list** (`EP 1`, `EP 2`, ..., `EP 61`).
    - Every episode button links directly to that specific episode on Narto Drama!
 
-5. **Built-in "Paste HTML" Tool**:
+5. **Firebase Google Sign-In & Cloud Watch List**:
+   - Secure authentication with Google Sign-In powered by Firebase Auth.
+   - All saved reels and drama progress are stored in Cloud Firestore per user account.
+   - Local storage for saved reels has been replaced with real-time cloud synchronization across devices.
+
+6. **Built-in "Paste HTML" Tool**:
    - Inspect any raw HTML document directly (from search or drama watch pages).
 
 ---

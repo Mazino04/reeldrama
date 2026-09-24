@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ReelDrama - Search Short Dramas &amp; Anime Reels</title>
     <meta name="description" content="Minimalist YouTube-inspired search engine for short dramas and anime reels. Real-time dynamic search and HTML parsing.">
-    <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+    <link rel="icon" type="image/png" href="icons/favicon.png">
     <link rel="manifest" href="manifest.webmanifest">
-    <meta name="theme-color" content="#0d121e">
+    <meta name="theme-color" content="#080b13">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,70 +17,225 @@
 </head>
 <body class="app-mode-home">
 
+    <!-- App Splash Loading Screen (Prevents UI flicker while verifying auth status) -->
+    <div class="app-splash-screen" id="app-splash-screen">
+        <div class="splash-content">
+            <img class="splash-brand-logo" src="icons/reeldrama-logo.png" alt="ReelDrama">
+            <div class="splash-spinner"></div>
+            <div class="splash-subtitle">Welcome to ReelDrama...</div>
+        </div>
+    </div>
+
+    <!-- App Auth Gate Screen (Sign-In First Experience) -->
+    <div class="app-auth-screen" id="app-auth-screen" style="display: none;">
+        <div class="auth-ambient-glow"></div>
+        <div class="auth-ambient-glow-2"></div>
+        <div class="auth-backdrop-mesh"></div>
+
+        <div class="auth-card">
+            <div class="auth-content-top">
+                <!-- Modern Capsule Badge -->
+                <div class="auth-badge">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l2.4 7.4H22l-6 4.6 2.3 7.2L12 16.8 5.7 21.2 8 14 2 9.4h7.6L12 2z"/>
+                    </svg>
+                    <span>Pocket Drama Theater</span>
+                </div>
+
+                <!-- Glowing Brand Logo -->
+                <div class="auth-logo-wrap">
+                    <img class="auth-brand-logo" src="icons/reeldrama-logo.png" alt="ReelDrama" width="200" height="46">
+                </div>
+
+                <h1 class="auth-tagline">Bite-Sized Dramas.<br><span class="auth-tagline-gradient">Infinite Stories.</span></h1>
+                <p class="auth-brand-desc">Watch trending short reels & mini-dramas across 5 dedicated providers.</p>
+
+                <!-- Modern Feature Cards with Gradient SVG Badges -->
+                <div class="auth-features-list">
+                    <div class="auth-feature-item">
+                        <div class="auth-feature-icon-badge badge-providers">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                            </svg>
+                        </div>
+                        <div class="auth-feature-info">
+                            <strong>5 Dedicated Providers</strong>
+                            <span>DramaBox, ReelShort, NetShort, GoodShort & more</span>
+                        </div>
+                    </div>
+
+                    <div class="auth-feature-item">
+                        <div class="auth-feature-icon-badge badge-cloud">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                            </svg>
+                        </div>
+                        <div class="auth-feature-info">
+                            <strong>Cloud Sync & Watch History</strong>
+                            <span>Sync bookmarks and watched episodes across devices</span>
+                        </div>
+                    </div>
+
+                    <div class="auth-feature-item">
+                        <div class="auth-feature-icon-badge badge-player">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                                <rect x="5" y="2" width="14" height="20" rx="3" ry="3"></rect>
+                                <line x1="12" y1="18" x2="12.01" y2="18"></line>
+                            </svg>
+                        </div>
+                        <div class="auth-feature-info">
+                            <strong>TikTok-Style Video Player</strong>
+                            <span>Vertical HD streaming with swipe gestures & episode sheet</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Actions Group -->
+            <div class="auth-footer-group">
+                <button class="auth-google-btn" id="auth-screen-google-btn" type="button">
+                    <svg class="google-svg-icon" viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.66-5.17 3.66-9.12z"/>
+                        <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.27 21.43 7.34 24 12 24z"/>
+                        <path fill="#FBBC05" d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.13z"/>
+                        <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.27 2.57 1.25 6.58l4.03 3.13c.95-2.83 3.6-4.96 6.72-4.96z"/>
+                    </svg>
+                    <span>Continue with Google</span>
+                </button>
+
+                <!-- Trust / Security Note -->
+                <div class="auth-security-note">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                    <span>Secure Cloud Authentication</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application Layout (Shown when authenticated) -->
+    <div class="app-main-layout" id="app-main-layout" style="display: none;">
+
+    <!-- Desktop Minimal Sidebar Rail (Inspired by modern Anime/Streaming platforms) -->
+    <aside class="app-sidebar-rail" id="app-sidebar-rail" aria-label="Desktop Navigation Rail">
+        <div class="rail-brand-icon" id="rail-brand-icon" title="ReelDrama Home" role="button" tabindex="0">
+            <img class="rail-brand-img" src="icons/reeldrama-icon.png" alt="ReelDrama" width="24" height="32">
+        </div>
+        <nav class="rail-nav-list">
+            <button class="rail-nav-btn active" id="rail-nav-home" type="button" title="Home">
+                <div class="rail-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                    </svg>
+                </div>
+            </button>
+            <button class="rail-nav-btn" id="rail-nav-saved" type="button" title="My Saved Reels">
+                <div class="rail-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                </div>
+            </button>
+            <button class="rail-nav-btn" id="rail-nav-random" type="button" title="Play Random Reel">
+                <div class="rail-icon-wrap">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="16 3 21 3 21 8"></polyline>
+                        <line x1="4" y1="20" x2="21" y2="3"></line>
+                        <polyline points="21 16 21 21 16 21"></polyline>
+                        <line x1="15" y1="15" x2="21" y2="21"></line>
+                        <line x1="4" y1="4" x2="9" y2="9"></line>
+                    </svg>
+                </div>
+            </button>
+        </nav>
+    </aside>
+
     <!-- Top Navigation Header -->
     <header class="navbar">
         <div class="nav-brand" id="nav-brand" role="button" tabindex="0" title="Back to Homepage">
-            <div class="brand-icon">▶</div>
-            <div class="brand-name">ReelDrama</div>
+            <img class="nav-brand-logo" src="icons/reeldrama-logo.png" alt="ReelDrama" height="28">
         </div>
+
         <div class="nav-actions">
-            <button class="nav-bookmark-btn" id="nav-bookmark-btn" type="button" title="View My List / Watch Later">
-                <svg class="btn-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+            <!-- Google Sign-In Button (shown when signed out) -->
+            <button class="nav-google-btn" id="nav-google-btn" type="button" title="Sign in with Google">
+                <svg class="google-svg-icon" viewBox="0 0 24 24" width="16" height="16">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.66-5.17 3.66-9.12z"/>
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.27 21.43 7.34 24 12 24z"/>
+                    <path fill="#FBBC05" d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.13z"/>
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.27 2.57 1.25 6.58l4.03 3.13c.95-2.83 3.6-4.96 6.72-4.96z"/>
                 </svg>
-                <span class="bookmark-text">My List</span>
-                <span class="bookmark-badge" id="nav-bookmark-count" style="display: none;">0</span>
+                <span class="auth-btn-text">Sign In</span>
             </button>
-            <button class="nav-install-btn" id="pwa-install-btn" type="button" title="Install ReelDrama App">
-                <svg class="btn-svg-icon install-bounce" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+
+            <!-- Download Button (Clean circular icon button) -->
+            <button class="nav-icon-circle-btn" id="pwa-install-btn" type="button" title="Download & Install App" aria-label="Download App">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7 10 12 15 17 10"></polyline>
                     <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                <span class="install-text">Install App</span>
             </button>
+
+            <!-- Circled Profile Picture Only (Name Alex is inside dropdown) -->
+            <div class="user-profile-wrap" id="user-profile-wrap" style="display: none;">
+                <button class="user-profile-btn circle-avatar-btn" id="user-profile-btn" type="button" aria-label="User Account Menu" aria-expanded="false" title="Account">
+                    <img class="user-avatar" id="user-avatar" src="" alt="Avatar" referrerpolicy="no-referrer">
+                </button>
+                <div class="user-dropdown-menu" id="user-dropdown-menu">
+                    <div class="dropdown-user-info">
+                        <img class="dropdown-avatar" id="dropdown-avatar" src="" alt="Avatar" referrerpolicy="no-referrer">
+                        <div class="dropdown-user-text">
+                            <div class="dropdown-name" id="dropdown-user-name">User Name</div>
+                            <div class="dropdown-email" id="dropdown-user-email">user@gmail.com</div>
+                        </div>
+                    </div>
+                   
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item dropdown-signout" id="dropdown-signout-btn" type="button">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                        <span>Sign Out</span>
+                    </button>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- Main Content Area -->
     <main>
-        <!-- YouTube / Google Inspired Search Hero (Only Search Bar + Logo) -->
+        <!-- Fluid Search Bar (Cleanly placed in-between Navbar Header and Provider Rail) -->
+        <div class="site-search-bar-wrap" id="nav-search-wrap">
+            <form class="nav-search-form" id="search-form" action="#" method="get">
+                <svg class="search-glass-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                    class="search-input"
+                    id="search-input"
+                    type="text"
+                    placeholder="Search dramas and reels..."
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Search dramas"
+                >
+                <button class="search-clear-btn" id="search-clear-btn" type="button" aria-label="Clear input">✕</button>
+                <kbd class="search-kbd-pill" title="Press / to search">/</kbd>
+            </form>
+        </div>
+
         <section class="hero-search-section" id="hero-section">
-            <div class="hero-logo-wrap" id="hero-logo">
-                <div class="hero-big-icon">▶</div>
-                <h1 class="hero-title">Reel<span>Drama</span></h1>
-                <p class="hero-subtitle">Search and Watch thousands of short dramas and reels.</p>
-            </div>
-
-            <!-- YouTube Style Search Form -->
-            <div class="search-container">
-                <form class="search-form" id="search-form" action="#" method="get">
-                    <div class="search-input-wrap">
-                        <input
-                            class="search-input"
-                            id="search-input"
-                            type="text"
-                            placeholder="Search your favorite Reels...."
-                            autocomplete="off"
-                            spellcheck="false"
-                            aria-label="Search dramas"
-                        >
-                        <button class="search-clear-btn" id="search-clear-btn" type="button" aria-label="Clear input">✕</button>
-                    </div>
-                    <div class="search-divider"></div>
-                    <button class="search-submit-btn" id="search-submit-btn" type="submit" aria-label="Search">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
-                    </button>
-                </form>
-            </div>
-
-            <!-- Provider Selection Tabs (5 Providers Only) -->
-            <div class="provider-tabs-wrap hero-provider-tabs" id="hero-provider-tabs">
+            <!-- Unified Provider Selection Rail -->
+            <div class="unified-provider-bar-wrap" id="unified-provider-bar-wrap">
                 <span class="provider-tabs-label">Provider:</span>
-                <div class="provider-tabs" role="tablist" aria-label="Select drama provider">
+                <div class="provider-tabs" id="unified-provider-tabs" role="tablist" aria-label="Select drama provider">
                     <button class="provider-tab-pill active" type="button" role="tab" data-provider="dramabox" aria-selected="true">
                         <span class="provider-tab-icon">📦</span>
                         <span class="provider-tab-text">DramaBox</span>
@@ -103,77 +258,31 @@
                     </button>
                 </div>
             </div>
-
-            <!-- Search Language Selection (en-US / es-ES) -->
-            <div class="lang-tabs-wrap hero-lang-tabs" id="hero-lang-tabs">
-                <span class="lang-tabs-label">Language:</span>
-                <div class="lang-tabs" role="radiogroup" aria-label="Search Language">
-                    <button class="lang-tab-pill active" type="button" data-lang="en-US" aria-checked="true">
-                        <span class="lang-tab-flag">🇺🇸</span>
-                        <span class="lang-tab-text">English (en-US)</span>
-                    </button>
-                    <button class="lang-tab-pill" type="button" data-lang="es-ES" aria-checked="false">
-                        <span class="lang-tab-flag">🇪🇸</span>
-                        <span class="lang-tab-text">Español (es-ES)</span>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Quick Suggestions under the Search Bar -->
-            <div class="search-hints" id="search-hints">
-                <span>Try:</span>
-                <button class="search-hint-pill" type="button" data-query="entes">Entes</button>
-                <button class="search-hint-pill" type="button" data-query="revenge">Revenge</button>
-                <button class="search-hint-pill" type="button" data-query="ceo">CEO</button>
-                <button class="search-hint-pill" type="button" data-query="system">System</button>
-                <button class="search-hint-pill" type="button" data-query="dubbed">Dubbed</button>
-                <button class="search-hint-pill" type="button" data-query="romance">Romance</button>
-            </div>
         </section>
 
-        <!-- Search Results Header Bar (Hidden on Homepage) -->
-        <div class="results-header-bar" id="results-bar">
-            <div class="results-query-info">
-                <span id="results-query">All Dramas</span>
-                <span class="results-count-badge" id="results-count">0 found</span>
+        <!-- Section Header Block (Styled like the reference screenshot) -->
+        <div class="section-header-block" id="section-header-block">
+            <div class="section-header-left">
+                <div class="section-title-wrap">
+                    <span class="section-accent-bar"></span>
+                    <h2 class="section-main-title" id="section-main-title">Recently Added</h2>
+                    
+                </div>
+                <p class="section-subtitle" id="section-subtitle">Trending short dramas and latest releases</p>
             </div>
 
-            <div class="results-actions">
-                <select class="lang-select" id="lang-select" aria-label="Search language">
-                    <option value="en-US">🇺🇸 English (en-US)</option>
-                    <option value="es-ES">🇪🇸 Español (es-ES)</option>
-                </select>
-                <select class="sort-select" id="sort-select" aria-label="Sort dramas">
-                    <option value="default">Sort by: Relevance</option>
-                    <option value="title-asc">Title: A to Z</option>
-                    <option value="title-desc">Title: Z to A</option>
-                </select>
-            </div>
-        </div>
-
-        <!-- Provider Selector Bar in Results View -->
-        <div class="results-provider-bar" id="results-provider-bar" style="display: none;">
-            <div class="provider-tabs" id="results-provider-tabs" role="tablist" aria-label="Filter by drama provider">
-                <button class="provider-tab-pill active" type="button" role="tab" data-provider="dramabox" aria-selected="true">
-                    <span class="provider-tab-icon">📦</span>
-                    <span class="provider-tab-text">DramaBox</span>
-                </button>
-                <button class="provider-tab-pill" type="button" role="tab" data-provider="reelshort" aria-selected="false">
-                    <span class="provider-tab-icon">⚡</span>
-                    <span class="provider-tab-text">ReelShort</span>
-                </button>
-                <button class="provider-tab-pill" type="button" role="tab" data-provider="netshort" aria-selected="false">
-                    <span class="provider-tab-icon">🌐</span>
-                    <span class="provider-tab-text">NetShort</span>
-                </button>
-                <button class="provider-tab-pill" type="button" role="tab" data-provider="goodshort" aria-selected="false">
-                    <span class="provider-tab-icon">✨</span>
-                    <span class="provider-tab-text">GoodShort</span>
-                </button>
-                <button class="provider-tab-pill" type="button" role="tab" data-provider="dramashorts" aria-selected="false">
-                    <span class="provider-tab-icon">🎬</span>
-                    <span class="provider-tab-text">DramaShorts</span>
-                </button>
+            <div class="section-header-right" id="results-bar">
+                <div class="results-actions">
+                    <select class="lang-select" id="lang-select" aria-label="Search language">
+                        <option value="en-US">🇺🇸 English (en-US)</option>
+                        <option value="es-ES">🇪🇸 Español (es-ES)</option>
+                    </select>
+                    <select class="sort-select" id="sort-select" aria-label="Sort dramas">
+                        <option value="default">Sort by: Relevance</option>
+                        <option value="title-asc">Title: A to Z</option>
+                        <option value="title-desc">Title: Z to A</option>
+                    </select>
+                </div>
             </div>
         </div>
 
@@ -213,30 +322,65 @@
 
         <!-- Dedicated "My List" Page View -->
         <section class="my-list-page" id="bookmarks-section" style="display: none;">
-            <div class="my-list-nav-bar">
-                <div class="my-list-nav-left">
-                    <button class="btn-back-home" id="bookmarks-back-btn" type="button" title="Return to Homepage">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <line x1="19" y1="12" x2="5" y2="12"></line>
-                            <polyline points="12 19 5 12 12 5"></polyline>
-                        </svg>
-                        <span>Back to Home</span>
-                    </button>
-                    <h2 class="my-list-title">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+            <div class="my-list-header-banner">
+                <div class="my-list-header-main">
+                    <div class="my-list-icon-badge">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
                         </svg>
-                        My List
-                    </h2>
-                    <span class="my-list-count-badge" id="bookmarks-count-badge">0 saved</span>
+                    </div>
+                    <div class="my-list-text-wrap">
+                        <div class="my-list-title-row">
+                            <h2 class="my-list-title">My List</h2>
+                            <span class="my-list-count-badge" id="bookmarks-count-badge">0 reels</span>
+                            <span class="my-list-cloud-pill">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path></svg>
+                                Cloud Synced
+                            </span>
+                        </div>
+                        <p class="my-list-subtitle">Your personal collection of saved short reels & dramas</p>
+                    </div>
                 </div>
-                <div class="my-list-nav-right">
-                    <button class="bookmarks-clear-btn" id="bookmarks-clear-btn" type="button" title="Clear all saved reels from My List">Clear All</button>
+
+                <!-- Instant Saved Reels Search Bar -->
+                <div class="my-list-search-wrap" id="bookmarks-search-wrap">
+                    <div class="my-list-search-inner">
+                        <svg class="my-list-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        <input
+                            type="search"
+                            class="my-list-search-input"
+                            id="bookmarks-search-input"
+                            placeholder="Search your saved reels..."
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <button class="my-list-search-clear" id="bookmarks-search-clear" type="button" aria-label="Clear search" style="display: none;">✕</button>
+                    </div>
                 </div>
             </div>
 
             <!-- My List Anime Cards Grid -->
             <div class="anime-grid" id="bookmarks-grid"></div>
+
+            <!-- Empty Search Filter State (shown when searching saved reels with 0 matches) -->
+            <div class="state-message" id="bookmarks-search-empty-state" style="display: none;">
+                <div class="state-icon">🔍</div>
+                <h3 class="state-title">No Saved Reels Found</h3>
+                <p class="state-desc" id="bookmarks-search-empty-desc">No saved reels match your search.</p>
+                <div class="state-actions">
+                    <button class="btn-secondary" id="bookmarks-clear-search-btn" type="button">Clear Search</button>
+                </div>
+            </div>
+
+            <!-- Loading State (shown briefly while verifying auth on page reload) -->
+            <div class="state-message" id="bookmarks-loading-state" style="display: none;">
+                <div class="spinner" style="margin: 0 auto 14px; width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--accent-pink); border-radius: 50%;"></div>
+                <h3 class="state-title" style="font-size: 15px; margin-bottom: 4px;">Syncing with Firebase...</h3>
+                <p class="state-desc">Checking your saved reels.</p>
+            </div>
 
             <!-- Empty List State -->
             <div class="state-message" id="bookmarks-empty-state" style="display: none;">
@@ -247,6 +391,25 @@
                     <button class="btn-primary" id="bookmarks-explore-btn" type="button">← Back to Homepage</button>
                 </div>
             </div>
+
+            <!-- Unauthenticated State (Prompt to Sign in with Google) -->
+            <div class="state-message" id="bookmarks-auth-state" style="display: none;">
+                <div class="state-icon">🔐</div>
+                <h3 class="state-title">Sign In to View Your List</h3>
+                <p class="state-desc">Your saved reels are stored securely in Firebase Cloud. Sign in with Google to access and sync your favorite dramas across all your devices.</p>
+                <div class="state-actions">
+                    <button class="btn-primary btn-google-signin" id="bookmarks-login-btn" type="button">
+                        <svg class="google-svg-icon" viewBox="0 0 24 24" width="18" height="18">
+                            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.65v3.03h3.88c2.27-2.09 3.66-5.17 3.66-9.12z"/>
+                            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.03c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.13C3.27 21.43 7.34 24 12 24z"/>
+                            <path fill="#FBBC05" d="M5.28 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.58H1.25C.45 8.17 0 9.99 0 12s.45 3.83 1.25 5.42l4.03-3.13z"/>
+                            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.27 2.57 1.25 6.58l4.03 3.13c.95-2.83 3.6-4.96 6.72-4.96z"/>
+                        </svg>
+                        <span>Sign in with Google</span>
+                    </button>
+                    <button class="btn-secondary" id="bookmarks-auth-home-btn" type="button">← Back to Homepage</button>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -255,7 +418,7 @@
         <div class="modal-card">
             <div class="modal-header">
                 <div class="modal-title">
-                    <span>🎬</span> Drama Quick View
+                    <span>🎬</span> Details
                 </div>
                 <button class="modal-close-btn" id="quick-view-close" type="button" aria-label="Close dialog">✕</button>
             </div>
@@ -267,16 +430,29 @@
                     <div class="drama-detail-info">
                         <h2 class="drama-detail-title" id="quick-view-title">Drama Title</h2>
                         <div class="drama-detail-meta" id="quick-view-meta"></div>
-                        <p class="drama-detail-desc" id="quick-view-desc"></p>
+                        <div class="drama-detail-desc-container">
+                            <p class="drama-detail-desc" id="quick-view-desc"></p>
+                            <button type="button" class="drama-desc-toggle" id="quick-view-desc-toggle" aria-expanded="false" style="display: none;">more</button>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Dynamic Episodes Section -->
                 <div class="episodes-section">
-                    <div class="episodes-title">
-                        <span>Select Episode to Watch:</span>
-                        <span id="quick-view-ep-count" style="color: var(--accent-pink);"></span>
+                    <div class="episodes-header-row">
+                        <div class="episodes-header-left">
+                            <span class="episodes-header-title">Select Episode:</span>
+                            <span class="ep-total-badge" id="quick-view-ep-count">Loading...</span>
+                        </div>
+                        <span class="episodes-progress-text" id="quick-view-progress-text"></span>
                     </div>
+
+                    <div class="episodes-progress-bar-wrap" id="quick-view-progress-bar-wrap" style="display: none;">
+                        <div class="episodes-progress-bar-fill" id="quick-view-progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+
+                    <!-- Segmented Episode Range Tabs (e.g. 1-30, 31-60) -->
+                    <div class="episodes-range-tabs" id="quick-view-episodes-tabs" style="display: none;"></div>
 
                     <!-- Episode Loading Spinner -->
                     <div class="episodes-loading-spinner" id="quick-view-episodes-loading" style="display: none;">
@@ -319,19 +495,9 @@
                     <span class="reel-feedback-icon" id="reel-feedback-icon">▶</span>
                 </div>
 
-                <!-- Heart Like Floating Particle for Double-tap -->
-                <div class="reel-heart-bubble" id="reel-heart-bubble">❤️</div>
-
-                <!-- Swipe Hint (disappears on first interaction) -->
-                <div class="reel-swipe-hint" id="reel-swipe-hint">
-                    <span class="swipe-arrow">▲</span>
-                    <span>Swipe up for next episode</span>
-                </div>
-
-                <!-- Buffering / Loading Indicator -->
-                <div class="player-buffering" id="player-buffering">
+                <!-- Buffering / Loading Indicator (Transparent, non-blocking TikTok style) -->
+                <div class="player-buffering" id="player-buffering" style="display: none;">
                     <div class="player-spinner"></div>
-                    <span class="player-buffering-text" id="player-buffering-text">Loading Stream...</span>
                 </div>
 
                 <!-- Error Overlay (100% Internal, no external links!) -->
@@ -348,59 +514,67 @@
 
             <!-- Top Floating Header Bar (Overlay) -->
             <div class="reel-top-bar">
-                <button class="reel-circle-btn" id="player-close-btn" type="button" aria-label="Back">
-                    <span>←</span>
+                <button class="reel-back-btn" id="player-close-btn" type="button" aria-label="Back" title="Back">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="19" y1="12" x2="5" y2="12"></line>
+                        <polyline points="12 19 5 12 12 5"></polyline>
+                    </svg>
                 </button>
-                <div class="reel-top-meta">
-                    <span class="reel-drama-badge" id="player-drama-title">Drama Title</span>
+                <div class="reel-top-badges">
+                    <div class="reel-quality-wrap" id="player-quality-wrap">
+                        <button class="reel-quality-pill" id="player-quality-btn" type="button" aria-haspopup="true" aria-expanded="false" title="Video Quality">
+                            <span id="player-quality-indicator">1080p</span>
+                            <svg class="quality-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        </button>
+                        <div class="quality-dropdown-menu" id="player-quality-menu" style="display: none;"></div>
+                    </div>
                     <span class="reel-ep-pill" id="player-ep-indicator">EP 1</span>
                 </div>
-                <button class="reel-circle-btn" id="player-close-btn-alt" type="button" aria-label="Close">
-                    <span>✕</span>
-                </button>
             </div>
 
-            <!-- Right Floating Action Rail (TikTok Column) -->
+            <!-- Right Floating Action Rail (Modern Backgroundless Floating Controls) -->
             <div class="reel-right-rail">
-                <!-- Like / Heart Button -->
-                <button class="reel-rail-btn" id="player-like-btn" type="button" aria-label="Like drama">
-                    <span class="reel-rail-icon" id="player-like-icon">🤍</span>
-                    <span class="reel-rail-label" id="player-like-count">14.2k</span>
-                </button>
-
                 <!-- Episodes Drawer Trigger Button -->
-                <button class="reel-rail-btn" id="player-drawer-btn" type="button" aria-label="View all episodes">
-                    <span class="reel-rail-icon">📑</span>
+                <button class="reel-rail-btn" id="player-drawer-btn" type="button" aria-label="View all episodes" title="Episodes">
+                    <span class="reel-rail-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="18" height="18" rx="3.5" ry="3.5"></rect>
+                            <line x1="7.5" y1="8" x2="16.5" y2="8"></line>
+                            <line x1="7.5" y1="12" x2="16.5" y2="12"></line>
+                            <line x1="7.5" y1="16" x2="13.5" y2="16"></line>
+                        </svg>
+                    </span>
                     <span class="reel-rail-label">Episodes</span>
                 </button>
 
                 <!-- Prev Episode Button -->
-                <button class="reel-rail-btn" id="player-prev-ep-btn" type="button" aria-label="Previous episode">
-                    <span class="reel-rail-icon">⏮</span>
+                <button class="reel-rail-btn" id="player-prev-ep-btn" type="button" aria-label="Previous episode" title="Previous Episode">
+                    <span class="reel-rail-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="19 20 9 12 19 4 19 20" fill="currentColor"></polygon>
+                            <line x1="5" y1="19" x2="5" y2="5" stroke-width="2.6"></line>
+                        </svg>
+                    </span>
                     <span class="reel-rail-label">Prev</span>
                 </button>
 
                 <!-- Next Episode Button -->
-                <button class="reel-rail-btn highlight" id="player-next-ep-btn" type="button" aria-label="Next episode">
-                    <span class="reel-rail-icon">⏭</span>
+                <button class="reel-rail-btn" id="player-next-ep-btn" type="button" aria-label="Next episode" title="Next Episode">
+                    <span class="reel-rail-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="5 4 15 12 5 20 5 4" fill="currentColor"></polygon>
+                            <line x1="19" y1="5" x2="19" y2="19" stroke-width="2.6"></line>
+                        </svg>
+                    </span>
                     <span class="reel-rail-label">Next</span>
-                </button>
-
-                <!-- Sound / Mute Toggle Button -->
-                <button class="reel-rail-btn" id="player-mute-btn" type="button" aria-label="Toggle mute">
-                    <span class="reel-rail-icon" id="player-mute-icon">🔊</span>
-                    <span class="reel-rail-label" id="player-mute-label">Sound</span>
                 </button>
             </div>
 
             <!-- Bottom Floating Info & Progress Bar -->
             <div class="reel-bottom-bar">
                 <div class="reel-info-content">
-                    <div class="reel-info-title-row">
-                        <h3 class="reel-info-title" id="player-info-title">Drama Title</h3>
-                        <span class="reel-info-quality">1080P HD</span>
-                    </div>
-                    <p class="reel-info-desc" id="player-info-desc">Swipe up to watch the next episode...</p>
+                    <h3 class="reel-info-title" id="player-info-title">Drama Title</h3>
+                    <p class="reel-info-desc" id="player-info-desc"></p>
                 </div>
 
                 <!-- Custom TikTok Scrub Line Progress Bar -->
@@ -417,18 +591,29 @@
                 </div>
             </div>
 
-            <!-- Slide-Up Bottom Drawer for All Episodes -->
+            <!-- Slide-Up Bottom Drawer for All Episodes (Segmented range tabs matching detail view) -->
             <div class="reel-episodes-sheet" id="reel-episodes-sheet">
                 <div class="sheet-backdrop" id="sheet-backdrop"></div>
                 <div class="sheet-panel">
                     <div class="sheet-handle-bar"></div>
                     <div class="sheet-header">
-                        <div class="sheet-title">
-                            <span>📑 Episodes</span>
-                            <span class="sheet-ep-total" id="sheet-ep-total"></span>
+                        <div class="sheet-title-col">
+                            <div class="sheet-title">
+                                <span>Select Episode:</span>
+                                <span class="detail-badge ep-total-badge" id="sheet-ep-total"></span>
+                            </div>
+                            <span class="episodes-progress-text" id="sheet-progress-text"></span>
                         </div>
-                        <button class="sheet-close-btn" id="sheet-close-btn" type="button">✕</button>
+                        <button class="sheet-close-btn" id="sheet-close-btn" type="button" aria-label="Close">✕</button>
                     </div>
+
+                    <div class="episodes-progress-bar-wrap" id="sheet-progress-bar-wrap" style="display: none;">
+                        <div class="episodes-progress-bar-fill" id="sheet-progress-bar-fill" style="width: 0%;"></div>
+                    </div>
+
+                    <!-- Segmented Episode Range Tabs (e.g. 1-30, 31-60) -->
+                    <div class="sheet-range-tabs episodes-range-tabs" id="sheet-episodes-tabs" style="display: none;"></div>
+
                     <div class="sheet-body">
                         <div class="sheet-episodes-grid" id="player-episodes-strip"></div>
                     </div>
@@ -476,11 +661,53 @@
                         style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff; padding: 10px; font-size: 13px; outline: none;"
                     >
                 </div>
+                <div>
+                    <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+                        NARTO DRAMA SESSION COOKIE (FOR PROVIDER SEARCH)
+                    </label>
+                    <input
+                        type="text"
+                        id="nd-session-cookie-input"
+                        placeholder="laravel-session=... or full Cookie header"
+                        style="width: 100%; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); color: #fff; padding: 10px; font-size: 13px; outline: none;"
+                    >
+                    <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                        Narto Drama requires an active account session to search external providers like Dramabox. If you have an account, paste your session cookie here to allow proxy searches, or enable CORS in your browser.
+                    </p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button class="btn-primary" id="save-proxy-btn" type="button">Save Settings</button>
             </div>
         </div>
+    </div>
+
+    <!-- Firebase Setup Guide Modal -->
+    <div class="modal-overlay" id="firebase-guide-modal" aria-hidden="true" role="dialog">
+        <div class="modal-card" style="max-width: 520px;">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <span>🔥</span> Firebase Setup Required
+                </div>
+                <button class="modal-close-btn" id="firebase-guide-close-btn" type="button" aria-label="Close dialog">✕</button>
+            </div>
+            <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px; font-size: 13.5px; line-height: 1.6; color: var(--text-secondary);">
+                <p>To enable Google Sign-In and cloud watch list syncing, please configure your Firebase project:</p>
+                <div style="background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); padding: 12px; border: 1px solid var(--border-color);">
+                    <ol style="padding-left: 18px; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+                        <li>Open the file <code style="color: var(--accent-pink);">firebase-config.js</code> in your project.</li>
+                        <li>Replace the placeholder keys in <code style="color: var(--accent-pink);">firebaseConfig</code> with your credentials from the <a href="https://console.firebase.google.com/" target="_blank" rel="noopener" style="color: var(--accent-blue); text-decoration: underline;">Firebase Console</a>.</li>
+                        <li>Enable <strong>Google Sign-in</strong> in <em>Authentication &gt; Sign-in method</em>.</li>
+                        <li>Create a <strong>Cloud Firestore</strong> database.</li>
+                    </ol>
+                </div>
+                <p style="font-size: 12.5px; color: var(--text-muted);">A full step-by-step walkthrough is provided in the assistant chat guide.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary" id="firebase-guide-ok-btn" type="button">Got it!</button>
+            </div>
+        </div>
+    </div>
 
     <!-- PWA Install Guide Modal (for Firefox, Zen Browser, Safari, etc.) -->
     <div class="modal-overlay" id="pwa-guide-modal" aria-hidden="true" role="dialog">
@@ -502,14 +729,37 @@
 
     <!-- Toast Notifications Container -->
     <div class="toast-container" id="toast-container"></div>
+    <!-- Material 3 Mobile App Bottom Navigation Bar -->
+    <nav class="m3-bottom-nav" id="m3-bottom-nav" aria-label="Mobile Navigation">
+        <button class="m3-nav-item active" id="m3-nav-explore" type="button" aria-label="Home">
+            <div class="m3-nav-pill">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                    <polyline points="9 22 9 12 15 12 15 22"></polyline>
+                </svg>
+            </div>
+            <span class="m3-nav-label">Home</span>
+        </button>
 
-    <!-- Footer -->
-    <footer class="site-footer">
-        <p>ReelDrama &bull; Dynamic Search &bull; For GitHub Pages</p>
-    </footer>
+        <button class="m3-nav-item" id="m3-nav-saved" type="button" aria-label="My List">
+            <div class="m3-nav-pill">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                </svg>
+            </div>
+            <span class="m3-nav-label">My List</span>
+        </button>
+    </nav>
+
+    </div><!-- End of #app-main-layout -->
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="firebase-config.js"></script>
     <script src="parser.js"></script>
     <script src="app.js"></script>
 </body>

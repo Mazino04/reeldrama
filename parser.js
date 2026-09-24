@@ -441,6 +441,18 @@ const DramaParser = (() => {
         if (/^file:\/\//i.test(trimmed) || /^file:/i.test(trimmed)) {
             return '';
         }
+        // Unpack Narto Drama /media/image/{base64} URLs to direct CDN URLs
+        const mediaMatch = trimmed.match(/\/media\/image\/([A-Za-z0-9+/=_-]+)/);
+        if (mediaMatch && mediaMatch[1]) {
+            try {
+                let b64 = mediaMatch[1].replace(/-/g, '+').replace(/_/g, '/');
+                while (b64.length % 4) b64 += '=';
+                const decoded = atob(b64);
+                if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://'))) {
+                    return decoded;
+                }
+            } catch (_) {}
+        }
         if (trimmed.startsWith('//')) {
             return 'https:' + trimmed;
         }
