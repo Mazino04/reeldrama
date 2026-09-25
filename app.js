@@ -4610,7 +4610,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             if (activeEp && activeEp.playUrl) {
                 if (activeEp.exp && (activeEp.exp * 1000) < Date.now()) {
                     closePlayer();
-                    showToast('This episode is not available at this moment');
+                    showToast('This episode is not available at this moment or has been removed');
                     return;
                 }
                 loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp, isSeamless);
@@ -4636,7 +4636,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
             if (targetExp && (targetExp * 1000) < Date.now()) {
                 closePlayer();
-                showToast('This episode is not available at this moment');
+                showToast('This episode is not available at this moment or has been removed');
                 return;
             }
 
@@ -4647,7 +4647,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
         } else if (streamData.streamUrl) {
             if (streamData.exp && (streamData.exp * 1000) < Date.now()) {
                 closePlayer();
-                showToast('This episode is not available at this moment');
+                showToast('This episode is not available at this moment or has been removed');
                 return;
             }
             loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless);
@@ -4659,7 +4659,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     } catch (err) {
         if (err && (err.status === 410 || /410/.test(err.message))) {
             closePlayer();
-            showToast('This episode is not available at this moment');
+            showToast('This episode is not available at this moment or has been removed');
             return;
         }
         console.error('[Stream Fetch Failed]:', err.message);
@@ -5005,7 +5005,7 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     // Check expiration timestamp for 410 Gone
     if (streamExp && (streamExp * 1000) < Date.now()) {
         closePlayer();
-        showToast('This episode is not available at this moment');
+        showToast('This episode is not available at this moment or has been removed');
         return;
     }
 
@@ -5153,7 +5153,7 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
             hls.destroy();
             PlayerState.hls = null;
             closePlayer();
-            showToast('This episode is not available at this moment');
+            showToast('This episode is not available at this moment or has been removed');
             return;
         }
 
@@ -5217,7 +5217,7 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
             const probe = await fetchWithTimeout(streamUrl, { method: 'HEAD', timeout: 3500 });
             if (probe.status === 410) {
                 closePlayer();
-                showToast('This episode is not available at this moment');
+                showToast('This episode is not available at this moment or has been removed');
                 return;
             }
             // 428 = CDN requires browser-native video request (not a JS fetch)
