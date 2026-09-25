@@ -13,16 +13,55 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="ReelDrama">
     <link rel="apple-touch-icon" href="icons/icon-192.png">
-    <link rel="stylesheet" href="styles.css?v=35">
+    <link rel="stylesheet" href="styles.css?v=38">
+    <!-- Instant Session & Reload Detector: Suppresses splash immediately on refresh -->
+    <script>
+        (function() {
+            try {
+                var isReload = false;
+                if (window.performance) {
+                    var nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+                    if (nav && nav.type === 'reload') isReload = true;
+                    else if (performance.navigation && performance.navigation.type === 1) isReload = true;
+                }
+                var sessionActive = sessionStorage.getItem('reeldrama_session_active');
+                if (sessionActive || isReload) {
+                    document.documentElement.classList.add('no-splash');
+                }
+            } catch(e) {}
+        })();
+    </script>
 </head>
 <body class="app-mode-home">
 
-    <!-- App Splash Loading Screen (Prevents UI flicker while verifying auth status) -->
-    <div class="app-splash-screen" id="app-splash-screen">
+    <!-- App Splash Screen (Exclusive to fresh app launch / open) -->
+    <div class="app-splash-screen" id="app-splash-screen" aria-label="Starting ReelDrama">
+        <div class="splash-ambient-glow splash-glow-1"></div>
+        <div class="splash-ambient-glow splash-glow-2"></div>
+        <div class="splash-backdrop-mesh"></div>
+
         <div class="splash-content">
-            <img class="splash-brand-logo" src="icons/reeldrama-logo.png" alt="ReelDrama">
-            <div class="splash-spinner"></div>
-            <div class="splash-subtitle">Welcome to ReelDrama...</div>
+            <div class="splash-brand-wrap">
+                <div class="splash-brand-halo"></div>
+                <img class="splash-brand-logo" src="icons/reeldrama-logo.png" alt="ReelDrama" width="220" height="52">
+            </div>
+
+            <div class="splash-tagline-wrap">
+                <div class="splash-pill-badge">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                    </svg>
+                    <span>Pocket Drama Theater</span>
+                </div>
+                <div class="splash-subtitle">Bite-Sized Dramas · Infinite Stories</div>
+            </div>
+
+            <div class="splash-loader-wrap">
+                <div class="splash-progress-track">
+                    <div class="splash-progress-bar"></div>
+                </div>
+                <div class="splash-status-text" id="splash-status-text">Entering theater...</div>
+            </div>
         </div>
     </div>
 
@@ -48,7 +87,7 @@
                 </div>
 
                 <h1 class="auth-tagline">Bite-Sized Dramas.<br><span class="auth-tagline-gradient">Infinite Stories.</span></h1>
-                <p class="auth-brand-desc">Watch trending short reels & mini-dramas across 5 dedicated providers.</p>
+                <p class="auth-brand-desc">Watch trending short reels & mini-dramas across 6 dedicated providers.</p>
 
                 <!-- Modern Feature Cards with Gradient SVG Badges -->
                 <div class="auth-features-list">
@@ -59,8 +98,8 @@
                             </svg>
                         </div>
                         <div class="auth-feature-info">
-                            <strong>5 Dedicated Providers</strong>
-                            <span>DramaBox, ReelShort, NetShort, GoodShort & more</span>
+                            <strong>6 Dedicated Providers</strong>
+                            <span>DramaBox, ReelShort, FlickReels, NetShort & more</span>
                         </div>
                     </div>
 
@@ -244,6 +283,10 @@
                         <span class="provider-tab-icon">⚡</span>
                         <span class="provider-tab-text">ReelShort</span>
                     </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="flickreels" aria-selected="false">
+                        <span class="provider-tab-icon">🍿</span>
+                        <span class="provider-tab-text">FlickReels</span>
+                    </button>
                     <button class="provider-tab-pill" type="button" role="tab" data-provider="netshort" aria-selected="false">
                         <span class="provider-tab-icon">🌐</span>
                         <span class="provider-tab-text">NetShort</span>
@@ -288,8 +331,12 @@
 
         <!-- Dynamic Content Container -->
         <div class="content-container" id="content-container">
-            <!-- Shimmer Skeleton Loading -->
+            <!-- Shimmer Skeleton Loading (Shown on refresh and dynamic search) -->
             <div class="skeleton-grid" id="skeleton-grid" style="display: none;">
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
+                <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
                 <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
                 <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
                 <div class="skeleton-card"><div class="skeleton-poster"></div><div class="skeleton-body"><div class="skeleton-line w-80"></div><div class="skeleton-line w-50"></div><div class="skeleton-line w-30"></div></div></div>
@@ -411,66 +458,151 @@
                 </div>
             </div>
         </section>
+
+        <!-- Dedicated Drama Detail Page View (Full Page Experience inspired by modern streaming apps) -->
+        <section class="drama-detail-page" id="drama-detail-page" style="display: none;">
+            <!-- Cinematic Hero Header with Ambient Backdrop Banner (Flush with top nav) -->
+            <div class="detail-hero-backdrop-wrap">
+                <div class="detail-hero-backdrop" id="detail-hero-backdrop"></div>
+                <div class="detail-hero-gradient-overlay"></div>
+                <div class="detail-hero-bottom-fade"></div>
+
+                <!-- Top Floating Action Bar (Arrow back on left, share on right) -->
+                <div class="detail-nav-bar">
+                    <button class="detail-back-btn" id="detail-back-btn" type="button" aria-label="Go back" title="Go back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                    </button>
+                    <div class="detail-nav-actions">
+                        <button class="detail-icon-btn" id="detail-share-btn" type="button" title="Share Drama" aria-label="Share Drama">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="18" cy="5" r="3"></circle>
+                                <circle cx="6" cy="12" r="3"></circle>
+                                <circle cx="18" cy="19" r="3"></circle>
+                                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+                                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Hero Content Row -->
+                <div class="detail-hero-content">
+                    <div class="detail-poster-column">
+                        <div class="detail-poster-card">
+                            <img class="detail-poster-img" id="detail-poster" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" alt="Drama Poster">
+                        </div>
+                    </div>
+
+                    <div class="detail-info-column">
+                        <div class="detail-kicker-row">
+                            <span class="detail-provider-pill" id="detail-provider-pill">DramaBox</span>
+                            <span class="detail-quality-pill">Multi-Audio</span>
+                            <span class="detail-status-pill" id="detail-status-pill">Streaming</span>
+                        </div>
+
+                        <h1 class="detail-main-title" id="detail-main-title">Drama Title</h1>
+
+                        <!-- Meta Info Row (Rating, Total Episodes, Media Type) -->
+                        <div class="detail-meta-row" id="detail-meta-row">
+                            <div class="detail-meta-item detail-meta-rating">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="#fbbf24">
+                                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                                </svg>
+                                <span id="detail-rating-val">9.2</span>
+                            </div>
+                            <span class="detail-meta-dot">·</span>
+                            <div class="detail-meta-item">
+                                <span id="detail-ep-count">Episodes</span>
+                            </div>
+                            <span class="detail-meta-dot">·</span>
+                            <div class="detail-meta-item">
+                                <span>Short Reel</span>
+                            </div>
+                        </div>
+
+                        <!-- Genre Tags Pills -->
+                        <div class="detail-genres-row" id="detail-genres-row"></div>
+
+                        <!-- Main Action Buttons Row (Equal Size, Width & Height) -->
+                        <div class="detail-actions-row">
+                            <!-- Dynamic Play CTA Button -->
+                            <button class="detail-play-btn" id="detail-play-cta" type="button">
+                                <span class="detail-play-cta-icon" id="detail-play-cta-icon">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
+                                        <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                                    </svg>
+                                </span>
+                                <span id="detail-play-cta-text">Episode 1</span>
+                            </button>
+
+                            <!-- Add to List / Saved Button -->
+                            <button class="detail-bookmark-btn" id="detail-bookmark-cta" type="button">
+                                <span class="detail-bookmark-icon" id="detail-bookmark-icon">
+                                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </span>
+                                <span id="detail-bookmark-text">Add to List</span>
+                            </button>
+                        </div>
+
+                        <!-- Synopsis Description with expand/collapse -->
+                        <div class="detail-synopsis-wrap">
+                            <p class="detail-synopsis-text" id="detail-synopsis-text">Loading drama synopsis...</p>
+                            <button class="detail-synopsis-toggle" id="detail-synopsis-toggle" type="button" style="display: none;">more</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Episodes Section (Matching Inspiration Layout) -->
+            <div class="detail-episodes-section">
+                <div class="detail-episodes-header">
+                    <div class="detail-episodes-controls-row">
+                        <!-- Segmented Range Custom Dropdown (20 episodes per page) -->
+                        <div class="detail-range-select-wrap" id="detail-range-select-wrap" style="display: none;">
+                            <button class="detail-range-trigger" id="detail-range-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="detail-range-trigger-text" id="detail-range-trigger-text">1 - 24</span>
+                                <svg class="detail-range-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="detail-range-menu" id="detail-range-menu" role="listbox" style="display: none;"></div>
+                        </div>
+
+                        <!-- Filter input (square with rounded corners) -->
+                        <div class="detail-filter-input-wrap">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <input
+                                type="text"
+                                class="detail-filter-input"
+                                id="detail-episodes-search-input"
+                                placeholder="Filter episodes..."
+                                autocomplete="off"
+                            >
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Segmented Episode Range Tabs (e.g. 1-20, 21-40) -->
+                <div class="detail-episodes-ranges" id="detail-episodes-ranges" style="display: none;"></div>
+
+                <!-- Episode Loading Spinner -->
+                <div class="detail-episodes-loading" id="detail-episodes-loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <span>Loading episodes...</span>
+                </div>
+
+                <!-- Modern 2-Column Episode Cards Grid (Matching Inspiration Screenshot 2) -->
+                <div class="detail-episodes-grid" id="detail-episodes-grid"></div>
+            </div>
+        </section>
     </main>
-
-    <!-- Quick View Drama Detail Modal (Fetches Real Episodes Dynamically) -->
-    <div class="modal-overlay" id="quick-view-modal" aria-hidden="true" role="dialog">
-        <div class="modal-card">
-            <div class="modal-header">
-                <div class="modal-title">
-                    <span>🎬</span> Details
-                </div>
-                <button class="modal-close-btn" id="quick-view-close" type="button" aria-label="Close dialog">✕</button>
-            </div>
-            <div class="modal-body">
-                <div class="drama-detail-layout">
-                    <div class="drama-detail-poster-wrap">
-                        <img class="drama-detail-poster" id="quick-view-poster" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 1'%3E%3C/svg%3E" alt="Drama Poster">
-                    </div>
-                    <div class="drama-detail-info">
-                        <h2 class="drama-detail-title" id="quick-view-title">Drama Title</h2>
-                        <div class="drama-detail-meta" id="quick-view-meta"></div>
-                        <div class="drama-detail-desc-container">
-                            <p class="drama-detail-desc" id="quick-view-desc"></p>
-                            <button type="button" class="drama-desc-toggle" id="quick-view-desc-toggle" aria-expanded="false" style="display: none;">more</button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Dynamic Episodes Section -->
-                <div class="episodes-section">
-                    <div class="episodes-header-row">
-                        <div class="episodes-header-left">
-                            <span class="episodes-header-title">Select Episode:</span>
-                            <span class="ep-total-badge" id="quick-view-ep-count">Loading...</span>
-                        </div>
-                        <span class="episodes-progress-text" id="quick-view-progress-text"></span>
-                    </div>
-
-                    <div class="episodes-progress-bar-wrap" id="quick-view-progress-bar-wrap" style="display: none;">
-                        <div class="episodes-progress-bar-fill" id="quick-view-progress-bar-fill" style="width: 0%;"></div>
-                    </div>
-
-                    <!-- Segmented Episode Range Tabs (e.g. 1-30, 31-60) -->
-                    <div class="episodes-range-tabs" id="quick-view-episodes-tabs" style="display: none;"></div>
-
-                    <!-- Episode Loading Spinner -->
-                    <div class="episodes-loading-spinner" id="quick-view-episodes-loading" style="display: none;">
-                        <div class="spinner"></div>
-                        <span>Fetching real episodes...</span>
-                    </div>
-
-                    <!-- Clickable Episode Buttons Grid -->
-                    <div class="episodes-grid" id="quick-view-episodes-grid"></div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button class="btn-primary" id="quick-view-stream-btn" type="button">
-                    ▶ Play Episode 1
-                </button>
-            </div>
-        </div>
-    </div>
 
     <!-- TikTok-Style Immersive Reels Video Player Modal -->
     <div class="modal-overlay player-modal-overlay" id="player-modal" aria-hidden="true" role="dialog">
@@ -534,6 +666,16 @@
 
             <!-- Right Floating Action Rail (Modern Backgroundless Floating Controls) -->
             <div class="reel-right-rail">
+                <!-- Bookmark / Save Button -->
+                <button class="reel-rail-btn reel-rail-bookmark-btn" id="player-bookmark-btn" type="button" aria-label="Save to My List" title="Save to My List">
+                    <span class="reel-rail-icon" id="player-bookmark-icon">
+                        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </span>
+                    <span class="reel-rail-label" id="player-bookmark-label">Save</span>
+                </button>
+
                 <!-- Episodes Drawer Trigger Button -->
                 <button class="reel-rail-btn" id="player-drawer-btn" type="button" aria-label="View all episodes" title="Episodes">
                     <span class="reel-rail-icon">
@@ -599,20 +741,39 @@
                     <div class="sheet-header">
                         <div class="sheet-title-col">
                             <div class="sheet-title">
-                                <span>Select Episode:</span>
+                                <span>Episodes</span>
                                 <span class="detail-badge ep-total-badge" id="sheet-ep-total"></span>
                             </div>
-                            <span class="episodes-progress-text" id="sheet-progress-text"></span>
                         </div>
                         <button class="sheet-close-btn" id="sheet-close-btn" type="button" aria-label="Close">✕</button>
                     </div>
 
-                    <div class="episodes-progress-bar-wrap" id="sheet-progress-bar-wrap" style="display: none;">
-                        <div class="episodes-progress-bar-fill" id="sheet-progress-bar-fill" style="width: 0%;"></div>
-                    </div>
+                    <!-- Range Selector Dropdown & Search Filter (matching detail page style) -->
+                    <div class="detail-episodes-controls-row sheet-controls-row">
+                        <div class="detail-range-select-wrap sheet-range-select-wrap" id="sheet-range-select-wrap" style="display: none;">
+                            <button class="detail-range-trigger sheet-range-trigger" id="sheet-range-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="detail-range-trigger-text sheet-range-trigger-text" id="sheet-range-trigger-text">1 - 24</span>
+                                <svg class="detail-range-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div class="detail-range-menu sheet-range-menu" id="sheet-range-menu" role="listbox" style="display: none;"></div>
+                        </div>
 
-                    <!-- Segmented Episode Range Tabs (e.g. 1-30, 31-60) -->
-                    <div class="sheet-range-tabs episodes-range-tabs" id="sheet-episodes-tabs" style="display: none;"></div>
+                        <div class="detail-filter-input-wrap sheet-filter-input-wrap">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                            </svg>
+                            <input
+                                type="text"
+                                class="detail-filter-input sheet-filter-input"
+                                id="sheet-episodes-search-input"
+                                placeholder="Filter episodes..."
+                                autocomplete="off"
+                            >
+                        </div>
+                    </div>
 
                     <div class="sheet-body">
                         <div class="sheet-episodes-grid" id="player-episodes-strip"></div>

@@ -438,9 +438,13 @@ const DramaParser = (() => {
         if (!url) return '';
         const trimmed = url.trim();
         // Disallow local file schemes to eliminate file:/// security errors
-        if (/^file:\/\//i.test(trimmed) || /^file:/i.test(trimmed)) {
+        if (/^file:\/\//i.test(trimmed) || /^file:/i.test(trimmed) || trimmed.includes('file:///')) {
             return '';
         }
+        const safeBase = (baseUrl && !/^file:/i.test(baseUrl.trim()) && !baseUrl.includes('file:///'))
+            ? baseUrl
+            : 'https://narto-drama.com';
+
         // Unpack Narto Drama /media/image/{base64} URLs to direct CDN URLs
         const mediaMatch = trimmed.match(/\/media\/image\/([A-Za-z0-9+/=_-]+)/);
         if (mediaMatch && mediaMatch[1]) {
@@ -448,7 +452,7 @@ const DramaParser = (() => {
                 let b64 = mediaMatch[1].replace(/-/g, '+').replace(/_/g, '/');
                 while (b64.length % 4) b64 += '=';
                 const decoded = atob(b64);
-                if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://'))) {
+                if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://')) && !/^file:/i.test(decoded)) {
                     return decoded;
                 }
             } catch (_) {}
@@ -460,9 +464,9 @@ const DramaParser = (() => {
             return trimmed;
         }
         if (trimmed.startsWith('/')) {
-            return baseUrl.replace(/\/+$/, '') + trimmed;
+            return safeBase.replace(/\/+$/, '') + trimmed;
         }
-        return baseUrl.replace(/\/+$/, '') + '/' + trimmed;
+        return safeBase.replace(/\/+$/, '') + '/' + trimmed;
     }
 
     function extractIdFromUrl(url) {

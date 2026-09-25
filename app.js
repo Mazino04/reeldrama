@@ -36,18 +36,29 @@ function shouldBypassProxy(url) {
     }
 }
 
-// Allowed Short Drama Providers (5 Dedicated Providers)
+// Allowed Short Drama Providers (6 Dedicated Providers)
 const ALLOWED_PROVIDERS = [
     { key: 'dramabox', label: 'DramaBox', icon: '📦' },
     { key: 'reelshort', label: 'ReelShort', icon: '⚡' },
+    { key: 'flickreels', label: 'FlickReels', icon: '🍿' },
     { key: 'netshort', label: 'NetShort', icon: '🌐' },
     { key: 'goodshort', label: 'GoodShort', icon: '✨' },
     { key: 'dramashorts', label: 'DramaShorts', icon: '🎬' }
 ];
 
-// Bookmark Button Icons (Plus for unsaved, Trash bin for removing saved reel)
-const ICON_PLUS_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>`;
-const ICON_TRASH_SVG = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>`;
+// Bookmark Button Icons (Filled for saved/My List, Outline for unsaved)
+const ICON_BOOKMARK_OUTLINE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+const ICON_BOOKMARK_FILLED_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+const ICON_PLAY_SVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>`;
+const ICON_REWATCH_SVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 4v6h6"></path><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>`;
+
+// Aliases for backwards compatibility
+const ICON_PLUS_SVG = ICON_BOOKMARK_OUTLINE_SVG;
+const ICON_TRASH_SVG = ICON_BOOKMARK_FILLED_SVG;
+
+// Player Floating Rail Bookmark SVGs (26x26)
+const PLAYER_BOOKMARK_OUTLINE_SVG = `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
+const PLAYER_BOOKMARK_FILLED_SVG = `<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 
 function getProviderLabel(key) {
     if (!key) return 'DramaBox';
@@ -151,7 +162,8 @@ const PlayerState = {
     touchStartX: 0,
     touchStartTime: 0,
     lastTapTime: 0,
-    episodeMarkedWatched: false
+    episodeMarkedWatched: false,
+    controlsHideTimer: null
 };
 
 /**
@@ -176,7 +188,7 @@ function getPlaceholderSvgDataUri(title) {
 function formatPosterUrl(rawUrl) {
     if (!rawUrl || typeof rawUrl !== 'string') return '';
     let url = rawUrl.trim();
-    if (!url || /^file:/i.test(url)) return '';
+    if (!url || /^file:/i.test(url) || url.includes('file:///')) return '';
 
     // If accidentally double-wrapped (e.g. ?url=https://...workers.dev/?url=...), unwrap to innermost URL
     while (url.includes('workers.dev/?url=')) {
@@ -201,7 +213,7 @@ function formatPosterUrl(rawUrl) {
             let b64 = mediaImageMatch[1].replace(/-/g, '+').replace(/_/g, '/');
             while (b64.length % 4) b64 += '=';
             const decoded = atob(b64);
-            if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://'))) {
+            if (decoded && (decoded.startsWith('http://') || decoded.startsWith('https://')) && !/^file:/i.test(decoded)) {
                 return decoded;
             }
         } catch (_) {}
@@ -271,6 +283,257 @@ const UserDataManager = {
         } else {
             this.isAuthResolved = true;
         }
+    },
+
+    isGenericIdentifier(str) {
+        if (!str || typeof str !== 'string') return true;
+        const s = str.trim().toLowerCase();
+        if (!s || s === '/' || s === 'undefined' || s === 'null' || s === '[object object]') return true;
+        if (/^file:/i.test(s) || s.includes('file:///')) return true;
+        if (s === 'watch' || s === 'detail' || s === 'search' || s === 'import' || s === 'book' || s === 'drama') return true;
+        if (s === '/search/import' || s === '/import' || s === '/search' || s === '/detail/watch' || s === '/watch') return true;
+        if (s.startsWith('https://narto-drama.com') && (s.endsWith('/search/import') || s.endsWith('/search') || s.endsWith('/watch') || s.endsWith('/detail/watch') || s === 'https://narto-drama.com' || s === 'https://narto-drama.com/')) return true;
+        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'flickreels_' || s === 'shortmax_') return true;
+        return false;
+    },
+
+    extractCoreId(target) {
+        if (!target) return '';
+        if (typeof target === 'object') {
+            if (target.book_id && !this.isGenericIdentifier(String(target.book_id))) return String(target.book_id).trim();
+            if (target.drama_id && !this.isGenericIdentifier(String(target.drama_id))) return String(target.drama_id).trim();
+            if (target.id && !String(target.id).startsWith('watch_') && !String(target.id).startsWith('title_') && !String(target.id).startsWith('detail_') && !String(target.id).startsWith('book_')) {
+                const sId = String(target.id).trim();
+                if (!this.isGenericIdentifier(sId)) return sId;
+            }
+        }
+        const urlStr = typeof target === 'string' ? target : (target.url || target.canonicalUrl || '');
+        if (!urlStr) return '';
+
+        try {
+            let parsed;
+            try {
+                parsed = new URL(urlStr, 'https://narto-drama.com');
+            } catch (_) {
+                parsed = null;
+            }
+            if (parsed) {
+                const qId = (parsed.searchParams.get('book_id') || parsed.searchParams.get('drama_id') || parsed.searchParams.get('id') || '').trim();
+                if (qId && !this.isGenericIdentifier(qId)) return qId;
+
+                const m = parsed.pathname.match(/\/(?:detail\/)?(?:watch\/)?([a-zA-Z0-9_-]+)(?:\/\d+)?$/i);
+                if (m && m[1] && !this.isGenericIdentifier(m[1])) {
+                    return m[1].trim();
+                }
+            }
+        } catch (_) {}
+
+        const fallbackMatch = String(urlStr).match(/(?:book_id=|drama_id=|watch\/|detail\/)([a-zA-Z0-9_-]+)/i);
+        if (fallbackMatch && fallbackMatch[1] && !this.isGenericIdentifier(fallbackMatch[1])) {
+            return fallbackMatch[1].trim();
+        }
+        return '';
+    },
+
+    getAllDramaKeys(target) {
+        const keys = new Set();
+        if (!target) return [];
+
+        const primaryKey = this.getDramaKey(target);
+        if (primaryKey && !this.isGenericIdentifier(primaryKey)) keys.add(primaryKey);
+
+        const primaryDocId = this.getDramaDocId(target);
+        if (primaryDocId && !this.isGenericIdentifier(primaryDocId)) keys.add(primaryDocId);
+
+        const coreId = this.extractCoreId(target);
+        if (coreId && !this.isGenericIdentifier(coreId)) {
+            keys.add(coreId);
+            keys.add(`watch_${coreId.toLowerCase()}`);
+            keys.add(`book_${coreId.toLowerCase()}`);
+            keys.add(`detail_${coreId.toLowerCase()}`);
+
+            const providers = ['dramabox', 'reelshort', 'shortmax', 'goodshort', 'sereal', 'netshort', 'flickreels', 'moboreels', 'stardust'];
+            const targetProv = (typeof target === 'object' ? (target.provider || target.category_name) : '') || '';
+            if (targetProv) {
+                const cleanProv = targetProv.toLowerCase().replace(/\s+/g, '');
+                if (!this.isGenericIdentifier(cleanProv)) {
+                    keys.add(`${cleanProv}_${coreId}`);
+                    keys.add(`${cleanProv}_${coreId.toLowerCase()}`);
+                }
+            }
+            providers.forEach(p => {
+                keys.add(`${p}_${coreId}`);
+                keys.add(`${p}_${coreId.toLowerCase()}`);
+            });
+        }
+
+        const title = (typeof target === 'string' ? '' : (target.title || '')).toLowerCase().trim();
+        if (title && title.length >= 3 && !this.isGenericIdentifier(title)) {
+            keys.add(`title_${title}`);
+        }
+
+        const url = (typeof target === 'string' ? target : (target.url || target.canonicalUrl || '')).toLowerCase().trim();
+        if (url && !this.isGenericIdentifier(url)) {
+            keys.add(url);
+        }
+
+        return Array.from(keys).filter(k => !this.isGenericIdentifier(k));
+    },
+
+    indexProgressRecord(record) {
+        if (!record) return;
+        const aliases = new Set();
+        if (record.key && !this.isGenericIdentifier(record.key)) aliases.add(record.key);
+        if (record.docId && !this.isGenericIdentifier(record.docId)) aliases.add(record.docId);
+        if (record.url && !this.isGenericIdentifier(record.url)) aliases.add(record.url);
+        if (record.canonicalUrl && !this.isGenericIdentifier(record.canonicalUrl)) aliases.add(record.canonicalUrl);
+        if (record.title && record.title.length >= 3 && !this.isGenericIdentifier(record.title)) aliases.add(`title_${record.title.toLowerCase().trim()}`);
+        if (record.decodedKeyOrUrl && !this.isGenericIdentifier(record.decodedKeyOrUrl)) aliases.add(record.decodedKeyOrUrl);
+
+        const coreId = record.book_id || this.extractCoreId(record.url || record.key);
+        if (coreId && !this.isGenericIdentifier(coreId)) {
+            aliases.add(coreId);
+            aliases.add(`watch_${coreId.toLowerCase()}`);
+            aliases.add(`book_${coreId.toLowerCase()}`);
+            aliases.add(`detail_${coreId.toLowerCase()}`);
+            if (record.provider) {
+                const prov = record.provider.toLowerCase().replace(/\s+/g, '');
+                if (!this.isGenericIdentifier(prov)) aliases.add(`${prov}_${coreId}`);
+            }
+            ['dramabox', 'reelshort', 'shortmax', 'goodshort', 'sereal', 'netshort', 'flickreels', 'moboreels', 'stardust'].forEach(p => {
+                aliases.add(`${p}_${coreId}`);
+            });
+        }
+
+        aliases.forEach(alias => {
+            if (alias && typeof alias === 'string' && alias.trim() && !this.isGenericIdentifier(alias)) {
+                this.data.progress[alias.trim()] = record;
+            }
+        });
+    },
+
+    findMatchingBookmark(target) {
+        if (!target || !this.data.bookmarks) return null;
+
+        // 1. Direct canonical key lookups
+        const key = this.getDramaKey(target);
+        if (key && !this.isGenericIdentifier(key) && this.data.bookmarks[key]) {
+            return this.data.bookmarks[key];
+        }
+        const docId = this.getDramaDocId(target);
+        if (docId && !this.isGenericIdentifier(docId) && this.data.bookmarks[docId]) {
+            return this.data.bookmarks[docId];
+        }
+
+        // 2. Target specific keys (only non-generic)
+        const targetKeys = this.getAllDramaKeys(target);
+        for (const k of targetKeys) {
+            if (k && !this.isGenericIdentifier(k) && this.data.bookmarks[k]) {
+                return this.data.bookmarks[k];
+            }
+        }
+
+        // 3. Precise matching against unique saved bookmarks list
+        const bookmarksList = this.getBookmarksList();
+        if (bookmarksList.length === 0) return null;
+
+        const targetCoreId = this.extractCoreId(target);
+        const targetTitle = (typeof target === 'string' ? '' : (target.title || '')).toLowerCase().trim();
+        const targetUrl = (typeof target === 'string' ? target : (target.url || target.canonicalUrl || '')).toLowerCase().trim();
+
+        for (const b of bookmarksList) {
+            if (!b) continue;
+
+            // Match by Core ID (book_id / drama_id / numeric slug)
+            if (targetCoreId && !this.isGenericIdentifier(targetCoreId)) {
+                const bCoreId = b.book_id || this.extractCoreId(b);
+                if (bCoreId && !this.isGenericIdentifier(bCoreId) && bCoreId.toLowerCase() === targetCoreId.toLowerCase()) {
+                    return b;
+                }
+            }
+
+            // Match by exact URL (NEVER use .includes which matches generic domain/paths)
+            if (targetUrl && !this.isGenericIdentifier(targetUrl)) {
+                const bUrl = (b.url || b.canonicalUrl || '').toLowerCase().trim();
+                if (bUrl && !this.isGenericIdentifier(bUrl) && bUrl === targetUrl) {
+                    return b;
+                }
+            }
+
+            // Match by exact Title (minimum 3 characters, ignoring case and whitespace)
+            if (targetTitle && targetTitle.length >= 3 && !this.isGenericIdentifier(targetTitle)) {
+                const bTitle = (b.title || '').toLowerCase().trim();
+                if (bTitle && bTitle === targetTitle) {
+                    return b;
+                }
+            }
+        }
+        return null;
+    },
+
+    syncProgressToBookmark(drama, progressRecord) {
+        if (!drama || !progressRecord) return;
+        const bookmark = this.findMatchingBookmark(drama);
+        if (!bookmark) return;
+
+        bookmark.lastWatchedEp = progressRecord.lastWatchedEp || 1;
+        bookmark.watchedList = progressRecord.watchedList || [];
+        bookmark.watchedCount = (progressRecord.watchedList || []).length;
+        bookmark.lastWatchedAt = progressRecord.lastWatchedAt || Date.now();
+        if (progressRecord.episodes && (!bookmark.episodes || bookmark.episodes < progressRecord.episodes)) {
+            bookmark.episodes = progressRecord.episodes;
+        }
+
+        if (this.currentUser && window.FirebaseService && window.FirebaseService.isReady()) {
+            const bookmarkDocId = bookmark.docId || this.getDramaDocId(bookmark);
+            const rtdb = window.FirebaseService.getRtdb();
+            const db = window.FirebaseService.getDb();
+            const updatePayload = {
+                lastWatchedEp: bookmark.lastWatchedEp,
+                watchedList: bookmark.watchedList,
+                watchedCount: bookmark.watchedCount,
+                lastWatchedAt: bookmark.lastWatchedAt,
+                episodes: bookmark.episodes || 0
+            };
+            if (rtdb) {
+                rtdb.ref(`users/${this.currentUser.uid}/bookmarks/${bookmarkDocId}`).update(updatePayload).catch(() => {});
+            } else if (db) {
+                db.collection('users').doc(this.currentUser.uid).collection('bookmarks').doc(bookmarkDocId).set(updatePayload, { merge: true }).catch(() => {});
+            }
+        }
+    },
+
+    ingestBookmarkProgress(bookmarkItem, docId) {
+        if (!bookmarkItem) return;
+        const coreId = bookmarkItem.book_id || this.extractCoreId(bookmarkItem);
+        const lastWatchedEp = Number(bookmarkItem.lastWatchedEp) || 1;
+        let watchedList = [];
+        if (Array.isArray(bookmarkItem.watchedList)) {
+            watchedList = bookmarkItem.watchedList.map(Number).filter(n => !isNaN(n) && n > 0);
+        } else if (bookmarkItem.watchedList && typeof bookmarkItem.watchedList === 'object') {
+            watchedList = Object.values(bookmarkItem.watchedList).map(Number).filter(n => !isNaN(n) && n > 0);
+        }
+
+        if (watchedList.length === 0 && lastWatchedEp > 1) {
+            for (let i = 1; i <= lastWatchedEp; i++) watchedList.push(i);
+        }
+
+        const progRecord = {
+            key: bookmarkItem.id || this.getDramaKey(bookmarkItem),
+            url: bookmarkItem.url || '',
+            canonicalUrl: bookmarkItem.canonicalUrl || bookmarkItem.url || '',
+            docId: docId || bookmarkItem.docId || this.getDramaDocId(bookmarkItem),
+            book_id: coreId,
+            provider: bookmarkItem.provider || bookmarkItem.category_name || '',
+            title: bookmarkItem.title || '',
+            lastWatchedEp: lastWatchedEp,
+            lastWatchedAt: Number(bookmarkItem.lastWatchedAt) || Date.now(),
+            watchedList: watchedList,
+            watchedCount: watchedList.length,
+            episodes: Number(bookmarkItem.episodes) || 0
+        };
+
+        this.indexProgressRecord(progRecord);
     },
 
     getDramaKey(target) {
@@ -346,7 +609,7 @@ const UserDataManager = {
 
     getDramaDocId(target) {
         const key = this.getDramaKey(target);
-        if (!key) return '';
+        if (!key || this.isGenericIdentifier(key)) return '';
         try {
             // Base64url safe string without slashes for Firebase key / Firestore document ID
             return btoa(unescape(encodeURIComponent(key))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '').substring(0, 100);
@@ -409,11 +672,26 @@ const UserDataManager = {
                     for (const [docKey, item] of Object.entries(raw)) {
                         if (item && (item.url || item.id || item.title)) {
                             const key = this.getDramaKey(item);
-                            // Purge corrupt keys that point to raw endpoints like /search/import without ID
-                            const isCorrupt = !key || key === '/search/import' || key === 'https://narto-drama.com/search/import' || key.endsWith('/detail/watch') || key.endsWith('/watch');
+                            // Purge corrupt keys that point to raw endpoints or file:/// protocols
+                            const isCorrupt = this.isGenericIdentifier(key) || 
+                                              this.isGenericIdentifier(docKey) || 
+                                              key === '/search/import' || 
+                                              key === 'https://narto-drama.com/search/import' || 
+                                              key.endsWith('/detail/watch') || 
+                                              key.endsWith('/watch') ||
+                                              (item.url && (/^file:/i.test(item.url.trim()) || item.url.includes('file:///'))) ||
+                                              (item.poster && (/^file:/i.test(item.poster.trim()) || item.poster.includes('file:///'))) ||
+                                              /^file:/i.test(docKey);
                             if (!isCorrupt) {
                                 item.poster = formatPosterUrl(item.poster || '');
-                                newBookmarks[key] = item;
+                                item.docId = item.docId || docKey;
+                                newBookmarks[docKey] = item;
+                                if (key && key !== docKey && !this.isGenericIdentifier(key)) {
+                                    newBookmarks[key] = item;
+                                }
+                                if ((item.watchedList && (Array.isArray(item.watchedList) ? item.watchedList.length > 0 : Object.keys(item.watchedList).length > 0)) || item.lastWatchedEp) {
+                                    this.ingestBookmarkProgress(item, docKey);
+                                }
                             } else {
                                 // Automatically purge corrupt legacy bookmark from RTDB
                                 try {
@@ -425,6 +703,7 @@ const UserDataManager = {
                     this.data.bookmarks = newBookmarks;
                     this.updateBadge();
                     updateVisibleBookmarkButtons();
+                    updateVisibleCardProgress();
                     if (AppState.mode === 'bookmarks') {
                         renderBookmarksView();
                     }
@@ -461,10 +740,25 @@ const UserDataManager = {
                     const d = doc.data();
                     if (d && (d.url || d.id || d.title)) {
                         const key = this.getDramaKey(d);
-                        const isCorrupt = !key || key === '/search/import' || key === 'https://narto-drama.com/search/import' || key.endsWith('/detail/watch') || key.endsWith('/watch');
+                        const isCorrupt = this.isGenericIdentifier(key) || 
+                                          this.isGenericIdentifier(doc.id) || 
+                                          key === '/search/import' || 
+                                          key === 'https://narto-drama.com/search/import' || 
+                                          key.endsWith('/detail/watch') || 
+                                          key.endsWith('/watch') ||
+                                          (d.url && (/^file:/i.test(d.url.trim()) || d.url.includes('file:///'))) ||
+                                          (d.poster && (/^file:/i.test(d.poster.trim()) || d.poster.includes('file:///'))) ||
+                                          /^file:/i.test(doc.id);
                         if (!isCorrupt) {
                             d.poster = formatPosterUrl(d.poster || '');
-                            newBookmarks[key] = d;
+                            d.docId = d.docId || doc.id;
+                            newBookmarks[doc.id] = d;
+                            if (key && key !== doc.id && !this.isGenericIdentifier(key)) {
+                                newBookmarks[key] = d;
+                            }
+                            if ((d.watchedList && (Array.isArray(d.watchedList) ? d.watchedList.length > 0 : Object.keys(d.watchedList).length > 0)) || d.lastWatchedEp) {
+                                this.ingestBookmarkProgress(d, doc.id);
+                            }
                         } else {
                             try {
                                 doc.ref.delete();
@@ -475,6 +769,7 @@ const UserDataManager = {
                 this.data.bookmarks = newBookmarks;
                 this.updateBadge();
                 updateVisibleBookmarkButtons();
+                updateVisibleCardProgress();
                 if (AppState.mode === 'bookmarks') {
                     renderBookmarksView();
                 }
@@ -545,7 +840,7 @@ const UserDataManager = {
     },
 
     updateBadge() {
-        const count = Object.keys(this.data.bookmarks || {}).length;
+        const count = this.getBookmarksList().length;
         if (elements.navBookmarkCount) {
             if (count > 0 && this.currentUser) {
                 elements.navBookmarkCount.textContent = count > 99 ? '99+' : count;
@@ -578,10 +873,9 @@ const UserDataManager = {
         }
     },
 
-    isBookmarked(dramaUrl) {
+    isBookmarked(target) {
         if (!this.currentUser) return false;
-        const key = this.getDramaKey(dramaUrl);
-        return Boolean(key && this.data.bookmarks[key]);
+        return Boolean(this.findMatchingBookmark(target));
     },
 
     async toggleBookmark(drama) {
@@ -593,9 +887,11 @@ const UserDataManager = {
 
         if (!drama || /^file:/i.test(drama.url || '')) return false;
         const key = this.getDramaKey(drama);
-        if (!key) return false;
+        if (!key || this.isGenericIdentifier(key)) return false;
 
         const docId = this.getDramaDocId(drama);
+        if (!docId || this.isGenericIdentifier(docId)) return false;
+
         const rtdb = window.FirebaseService.getRtdb();
         const db = window.FirebaseService.getDb();
         if (!rtdb && !db) {
@@ -603,41 +899,63 @@ const UserDataManager = {
             return false;
         }
 
-        const isCurrentlySaved = Boolean(this.data.bookmarks[key]);
+        const existingBookmark = this.findMatchingBookmark(drama);
+        const isCurrentlySaved = Boolean(existingBookmark);
 
         if (isCurrentlySaved) {
+            const targetDocId = existingBookmark.docId || docId;
+            const targetKey = existingBookmark.id || key;
             // Optimistic in-memory update
-            delete this.data.bookmarks[key];
+            for (const [k, v] of Object.entries(this.data.bookmarks)) {
+                if (v === existingBookmark || (v && targetDocId && v.docId === targetDocId) || k === targetDocId || k === docId || k === targetKey || k === key) {
+                    delete this.data.bookmarks[k];
+                }
+            }
+
             this.updateBadge();
             try {
                 if (rtdb) {
-                    await rtdb.ref(`users/${this.currentUser.uid}/bookmarks/${docId}`).remove();
+                    await rtdb.ref(`users/${this.currentUser.uid}/bookmarks/${targetDocId}`).remove();
                 } else if (db) {
-                    await db.collection('users').doc(this.currentUser.uid).collection('bookmarks').doc(docId).delete();
+                    await db.collection('users').doc(this.currentUser.uid).collection('bookmarks').doc(targetDocId).delete();
                 }
             } catch (err) {
                 console.error('[Firebase] Failed to delete bookmark:', err);
-                this.data.bookmarks[key] = drama;
+                if (docId) this.data.bookmarks[docId] = existingBookmark;
+                if (key) this.data.bookmarks[key] = existingBookmark;
                 this.updateBadge();
                 throw err;
             }
             return false;
         } else {
             const safePoster = formatPosterUrl(drama.poster || '');
+            const currentProg = this.getDramaProgress(drama);
+            const coreId = this.extractCoreId(drama);
             const bookmarkData = {
                 id: key,
                 docId: docId,
                 title: drama.title || 'Untitled Drama',
                 poster: safePoster,
                 url: drama.url,
+                canonicalUrl: drama.canonicalUrl || drama.url,
+                book_id: coreId,
                 tags: Array.isArray(drama.tags) ? drama.tags : [],
                 category_name: drama.category_name || getItemProviderName(drama),
-                episodes: drama.episodes || (drama.episodeList ? drama.episodeList.length : 0),
-                savedAt: Date.now()
+                episodes: drama.episodes || (drama.episodeList ? drama.episodeList.length : (currentProg.episodes || 0)),
+                savedAt: Date.now(),
+                // TIE PROGRESS DIRECTLY TO BOOKMARK
+                lastWatchedEp: currentProg.lastWatchedEp || 1,
+                watchedList: currentProg.watchedList || [],
+                watchedCount: (currentProg.watchedList || []).length,
+                lastWatchedAt: currentProg.lastWatchedAt || 0
             };
 
             // Optimistic in-memory update
-            this.data.bookmarks[key] = bookmarkData;
+            if (docId) this.data.bookmarks[docId] = bookmarkData;
+            if (key && key !== docId && !this.isGenericIdentifier(key)) {
+                this.data.bookmarks[key] = bookmarkData;
+            }
+
             this.updateBadge();
             try {
                 if (rtdb) {
@@ -647,7 +965,8 @@ const UserDataManager = {
                 }
             } catch (err) {
                 console.error('[Firebase] Failed to save bookmark:', err);
-                delete this.data.bookmarks[key];
+                if (docId) delete this.data.bookmarks[docId];
+                if (key) delete this.data.bookmarks[key];
                 this.updateBadge();
                 throw err;
             }
@@ -656,7 +975,24 @@ const UserDataManager = {
     },
 
     getBookmarksList() {
-        const list = Object.values(this.data.bookmarks || {});
+        const uniqueMap = new Map();
+        for (const item of Object.values(this.data.bookmarks || {})) {
+            if (!item || (!item.url && !item.id && !item.title)) continue;
+            // Disallow any corrupt bookmarks pointing to local file:/// URIs
+            if ((item.url && (/^file:/i.test(item.url.trim()) || item.url.includes('file:///'))) ||
+                (item.id && (/^file:/i.test(item.id.trim()) || item.id.includes('file:///')))) {
+                continue;
+            }
+            const key = this.getDramaKey(item);
+            if (this.isGenericIdentifier(key)) continue;
+
+            const uid = item.docId || item.id || key || item.url;
+            if (uid && !uniqueMap.has(uid)) {
+                if (item.poster) item.poster = formatPosterUrl(item.poster);
+                uniqueMap.set(uid, item);
+            }
+        }
+        const list = Array.from(uniqueMap.values());
         return list.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
     },
 
@@ -681,6 +1017,7 @@ const UserDataManager = {
             this.data.bookmarks = {};
             this.updateBadge();
             updateVisibleBookmarkButtons();
+            updateVisibleCardProgress();
         } catch (err) {
             console.error('[Firebase] Clear all error:', err);
             throw err;
@@ -692,8 +1029,6 @@ const UserDataManager = {
             this.data.progress = {};
             return;
         }
-
-        const newProgress = {};
 
         for (const [docIdKey, val] of Object.entries(rawData)) {
             if (!val || typeof val !== 'object') continue;
@@ -717,15 +1052,14 @@ const UserDataManager = {
             }
             watchedList = Array.from(new Set(watchedList)).sort((a, b) => a - b);
 
-            // If lastWatchedEp is ahead of the stored watchedList (e.g. list=[1..5] but lastWatchedEp=30),
-            // backfill episodes 1..lastWatchedEp so counts are always accurate and consistent.
-            if (lastWatchedEp > 0 && (watchedList.length === 0 || Math.max(...watchedList) < lastWatchedEp)) {
+            // Legacy backfill ONLY if watchedList was completely empty
+            if (lastWatchedEp > 1 && watchedList.length === 0) {
                 const backfilled = [];
                 for (let i = 1; i <= lastWatchedEp; i++) backfilled.push(i);
-                watchedList = Array.from(new Set([...watchedList, ...backfilled])).sort((a, b) => a - b);
+                watchedList = backfilled;
             }
 
-            if (!lastWatchedEp) lastWatchedEp = 1;
+            if (!lastWatchedEp) lastWatchedEp = watchedList.length > 0 ? Math.max(...watchedList) : 1;
 
             const lastWatchedAt = Number(val.lastWatchedAt) || Date.now();
 
@@ -746,81 +1080,42 @@ const UserDataManager = {
             const cleanRecord = {
                 key: val.key || '',
                 url: val.url || val.dramaUrl || '',
+                canonicalUrl: val.canonicalUrl || '',
                 docId: docIdKey,
                 decodedKeyOrUrl: decoded,
+                title: val.title || '',
+                book_id: val.book_id || this.extractCoreId(val.url || val.key || decoded),
+                provider: val.provider || '',
+                episodes: Number(val.episodes) || 0,
                 lastWatchedEp,
                 lastWatchedAt,
-                watchedList
+                watchedList,
+                watchedCount: watchedList.length
             };
 
-            const addAlias = (alias) => {
-                if (!alias || typeof alias !== 'string') return;
-                const cleanAlias = alias.trim();
-                if (!cleanAlias) return;
+            this.indexProgressRecord(cleanRecord);
 
-                const existing = newProgress[cleanAlias];
-                if (existing) {
-                    const mergedList = Array.from(new Set([...existing.watchedList, ...cleanRecord.watchedList])).sort((a, b) => a - b);
-                    const mergedLastEp = Math.max(existing.lastWatchedEp || 1, cleanRecord.lastWatchedEp || 1);
-                    const mergedLastAt = Math.max(existing.lastWatchedAt || 0, cleanRecord.lastWatchedAt || 0);
-                    newProgress[cleanAlias] = {
-                        ...existing,
-                        lastWatchedEp: mergedLastEp,
-                        lastWatchedAt: mergedLastAt,
-                        watchedList: mergedList
-                    };
-                } else {
-                    newProgress[cleanAlias] = cleanRecord;
+            // Cross-update any matching bookmark in memory
+            const matchingBookmark = this.findMatchingBookmark(cleanRecord);
+            if (matchingBookmark) {
+                matchingBookmark.lastWatchedEp = lastWatchedEp;
+                matchingBookmark.watchedList = watchedList;
+                matchingBookmark.watchedCount = watchedList.length;
+                matchingBookmark.lastWatchedAt = lastWatchedAt;
+                if (cleanRecord.episodes && (!matchingBookmark.episodes || matchingBookmark.episodes < cleanRecord.episodes)) {
+                    matchingBookmark.episodes = cleanRecord.episodes;
                 }
-            };
-
-            // Index under raw RTDB child key
-            addAlias(docIdKey);
-
-            // Index under decoded key/URL and its variants
-            if (decoded) {
-                addAlias(decoded);
-                const dKey = this.getDramaKey(decoded);
-                if (dKey) addAlias(dKey);
-                const dDocId = this.getDramaDocId(decoded);
-                if (dDocId) addAlias(dDocId);
-
-                const slugMatch = decoded.match(/(?:watch\/|^watch_)?([a-z0-9-]+)(?:\/\d+)?$/i);
-                if (slugMatch && slugMatch[1]) {
-                    addAlias(`watch_${slugMatch[1].toLowerCase()}`);
-                    addAlias(slugMatch[1].toLowerCase());
-                }
-            }
-
-            // Index under val.key
-            if (val.key) {
-                addAlias(val.key);
-                const kKey = this.getDramaKey(val.key);
-                if (kKey) addAlias(kKey);
-                const kDocId = this.getDramaDocId(val.key);
-                if (kDocId) addAlias(kDocId);
-            }
-
-            // Index under val.url
-            if (val.url) {
-                addAlias(val.url);
-                const uKey = this.getDramaKey(val.url);
-                if (uKey) addAlias(uKey);
-                const uDocId = this.getDramaDocId(val.url);
-                if (uDocId) addAlias(uDocId);
             }
         }
 
-        this.data.progress = newProgress;
-
         try {
-            localStorage.setItem('reeldrama_progress', JSON.stringify(newProgress));
+            localStorage.setItem('reeldrama_progress', JSON.stringify(this.data.progress));
         } catch (_) {}
 
         updateVisibleCardProgress();
-        if (AppState.selectedDrama && elements.quickViewModal && elements.quickViewModal.classList.contains('active')) {
+        if (AppState.selectedDrama && (AppState.mode === 'detail' || (elements.quickViewModal && elements.quickViewModal.classList.contains('active')))) {
             if (AppState.selectedDrama.episodeList && AppState.selectedDrama.episodeList.length > 0) {
-                renderEpisodesList(AppState.selectedDrama.episodeList);
+                renderEpisodesList(AppState.selectedDrama.episodeList, AppState.selectedDrama.episodes);
             }
         }
         if (PlayerState.currentDrama && elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) {
@@ -829,7 +1124,7 @@ const UserDataManager = {
     },
 
     getDramaProgress(target) {
-        if (!target) return { lastWatchedEp: 1, lastWatchedAt: 0, watchedList: [] };
+        if (!target) return { lastWatchedEp: 1, lastWatchedAt: 0, watchedList: [], episodes: 0 };
 
         const returnValid = (item) => {
             if (!item || typeof item !== 'object') return null;
@@ -843,70 +1138,58 @@ const UserDataManager = {
             if (!lastEp && list.length > 0) lastEp = Math.max(...list);
             list = Array.from(new Set(list)).sort((a, b) => a - b);
 
-            // If lastWatchedEp is ahead of what's in the watchedList (e.g. list has 5 items
-            // but lastWatchedEp=30), backfill episodes 1..lastWatchedEp so the displayed
-            // count always matches what the user has actually watched.
-            if (lastEp > 0 && (list.length === 0 || Math.max(...list) < lastEp)) {
-                const backfilled = [];
-                for (let i = 1; i <= lastEp; i++) backfilled.push(i);
-                list = Array.from(new Set([...list, ...backfilled])).sort((a, b) => a - b);
+            // Legacy backfill ONLY if watchedList is empty
+            if (lastEp > 1 && list.length === 0) {
+                for (let i = 1; i <= lastEp; i++) list.push(i);
             }
+
+            const epCount = Number(item.episodes) || 0;
+            const isComp = Boolean(item.isCompleted) || (epCount > 0 && (list.length >= epCount || (lastEp >= epCount && list.includes(epCount))));
 
             return {
                 lastWatchedEp: lastEp || 1,
                 lastWatchedAt: Number(item.lastWatchedAt) || 0,
-                watchedList: list
+                watchedList: list,
+                episodes: epCount,
+                isCompleted: isComp,
+                title: item.title || ''
             };
         };
 
-        // 1. Direct object
+        // 1. Direct object matching via multiple aliases
         if (typeof target === 'object' && target !== null) {
-            if (target.url) {
-                const res = this.getDramaProgress(target.url);
-                if (res && res.watchedList && res.watchedList.length > 0) return res;
+            const allKeys = this.getAllDramaKeys(target);
+            for (const k of allKeys) {
+                if (k && this.data.progress[k]) {
+                    const res = returnValid(this.data.progress[k]);
+                    if (res && (res.watchedList.length > 0 || res.lastWatchedAt > 0 || res.lastWatchedEp > 1)) {
+                        if (!res.episodes) {
+                            const b = this.findMatchingBookmark(target);
+                            if (b && b.episodes > 0) {
+                                res.episodes = Number(b.episodes);
+                                if (res.watchedList.length >= res.episodes) res.isCompleted = true;
+                            }
+                        }
+                        return res;
+                    }
+                }
             }
-            const key = this.getDramaKey(target);
-            if (key && this.data.progress[key]) {
-                const res = returnValid(this.data.progress[key]);
-                if (res && res.watchedList && res.watchedList.length > 0) return res;
-            }
-            const docId = this.getDramaDocId(target);
-            if (docId && this.data.progress[docId]) {
-                const res = returnValid(this.data.progress[docId]);
-                if (res && res.watchedList && res.watchedList.length > 0) return res;
+
+            // Check bookmark matching
+            const bookmark = this.findMatchingBookmark(target);
+            if (bookmark && (bookmark.watchedList || bookmark.lastWatchedEp)) {
+                const res = returnValid(bookmark);
+                if (res && (res.watchedList.length > 0 || res.lastWatchedAt > 0 || res.lastWatchedEp > 1)) return res;
             }
         }
 
-        // 2. String target
+        // 2. String target matching
         const str = typeof target === 'string' ? target.trim() : '';
         if (str) {
-            if (this.data.progress[str]) {
-                const res = returnValid(this.data.progress[str]);
-                if (res) return res;
-            }
-
-            const key = this.getDramaKey(str);
-            if (key && this.data.progress[key]) {
-                const res = returnValid(this.data.progress[key]);
-                if (res) return res;
-            }
-
-            const docId = this.getDramaDocId(str);
-            if (docId && this.data.progress[docId]) {
-                const res = returnValid(this.data.progress[docId]);
-                if (res) return res;
-            }
-
-            const slugMatch = str.match(/(?:watch\/|^watch_)?([a-z0-9-]+)(?:\/\d+)?$/i);
-            if (slugMatch && slugMatch[1]) {
-                const slug = slugMatch[1].toLowerCase();
-                const watchKey = `watch_${slug}`;
-                if (this.data.progress[watchKey]) {
-                    const res = returnValid(this.data.progress[watchKey]);
-                    if (res) return res;
-                }
-                if (this.data.progress[slug]) {
-                    const res = returnValid(this.data.progress[slug]);
+            const allKeys = this.getAllDramaKeys(str);
+            for (const k of allKeys) {
+                if (k && this.data.progress[k]) {
+                    const res = returnValid(this.data.progress[k]);
                     if (res) return res;
                 }
             }
@@ -914,22 +1197,44 @@ const UserDataManager = {
             const strLower = str.toLowerCase();
             for (const item of Object.values(this.data.progress)) {
                 if (!item) continue;
-                if (item.key && (item.key.toLowerCase() === strLower || (key && item.key.toLowerCase() === key.toLowerCase()))) {
+                if (item.key && item.key.toLowerCase() === strLower) {
                     const res = returnValid(item);
-                    if (res && res.watchedList.length > 0) return res;
+                    if (res) return res;
                 }
                 if (item.url && (item.url.toLowerCase() === strLower || strLower.includes(item.url.toLowerCase()) || item.url.toLowerCase().includes(strLower))) {
                     const res = returnValid(item);
-                    if (res && res.watchedList.length > 0) return res;
+                    if (res) return res;
                 }
-                if (item.decodedKeyOrUrl && (item.decodedKeyOrUrl.toLowerCase() === strLower || strLower.includes(item.decodedKeyOrUrl.toLowerCase()) || (key && this.getDramaKey(item.decodedKeyOrUrl) === key))) {
+                if (item.title && strLower.includes(item.title.toLowerCase())) {
                     const res = returnValid(item);
-                    if (res && res.watchedList.length > 0) return res;
+                    if (res) return res;
                 }
             }
         }
 
-        return { lastWatchedEp: 1, lastWatchedAt: 0, watchedList: [] };
+        return { lastWatchedEp: 1, lastWatchedAt: 0, watchedList: [], episodes: 0, isCompleted: false };
+    },
+
+    isProgressCompleted(drama) {
+        if (!drama) return false;
+        const prog = this.getDramaProgress(drama);
+        if (!prog) return false;
+        if (prog.isCompleted) return true;
+        const watchedList = Array.isArray(prog.watchedList) ? prog.watchedList : [];
+        const watchedCount = watchedList.length > 0
+            ? watchedList.length
+            : (prog.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0);
+        let totalEps = (typeof drama === 'object' && drama.episodes && drama.episodes > 0)
+            ? drama.episodes
+            : (drama.episodeList ? drama.episodeList.length : (prog.episodes || 0));
+        if (!totalEps) {
+            const bookmark = this.findMatchingBookmark(drama);
+            if (bookmark && bookmark.episodes > 0) totalEps = bookmark.episodes;
+        }
+        if (totalEps > 0 && (watchedList.length >= totalEps || (watchedCount >= totalEps && Math.round((watchedCount / totalEps) * 100) >= 100))) {
+            return true;
+        }
+        return false;
     },
 
     setLastWatchedEpisode(drama, epNum) {
@@ -937,33 +1242,84 @@ const UserDataManager = {
         const key = this.getDramaKey(drama);
         if (!key) return;
 
+        // If progress is already completed (100% watched / rewatching), do not overwrite progress
+        if (this.isProgressCompleted(drama)) {
+            return;
+        }
+
         const ep = parseInt(epNum, 10) || 1;
         const currentProg = this.getDramaProgress(drama);
-        // Auto-fill all skipped preceding episodes (1 to ep - 1) as watched if jumping forward
-        const prevEps = [];
-        for (let i = 1; i < ep; i++) {
-            prevEps.push(i);
-        }
-        const watchedList = Array.from(new Set([...(currentProg.watchedList || []), ...prevEps])).sort((a, b) => a - b);
+        const watchedList = Array.isArray(currentProg.watchedList) ? [...currentProg.watchedList] : [];
         const docId = this.getDramaDocId(drama);
         const rawUrl = typeof drama === 'string' ? drama : (drama.url || '');
+        const dramaTitle = typeof drama === 'object' ? (drama.title || '') : '';
+        const coreId = this.extractCoreId(drama);
+        const providerName = typeof drama === 'object' ? (drama.provider || drama.category_name || '') : '';
+
+        let totalEps = (typeof drama === 'object' && drama.episodes && Number(drama.episodes) > 0)
+            ? Number(drama.episodes)
+            : (drama && Array.isArray(drama.episodeList) && drama.episodeList.length > 0 ? drama.episodeList.length : 0);
+
+        if (!totalEps && typeof PlayerState !== 'undefined' && PlayerState.episodes && PlayerState.episodes.length > 0) {
+            totalEps = PlayerState.episodes.length;
+        }
+        if (!totalEps && currentProg.episodes && Number(currentProg.episodes) > 0) {
+            totalEps = Number(currentProg.episodes);
+        }
+        if (!totalEps) {
+            const bookmark = this.findMatchingBookmark(drama);
+            if (bookmark && bookmark.episodes > 0) totalEps = Number(bookmark.episodes);
+        }
+
+        // Offset-of-1 progress range logic:
+        // Watching episode N means episodes 1 through N-1 are marked watched.
+        // Episode N is not added until episode N+1.
+        // Final episode exception: When at or reaching the final episode (ep >= totalEps),
+        // all episodes 1 through totalEps (including the final episode) are marked watched.
+        let upToEp = ep - 1;
+        if (totalEps > 0 && ep >= totalEps) {
+            upToEp = totalEps;
+        }
+
+        if (upToEp > 0) {
+            for (let i = 1; i <= upToEp; i++) {
+                if (!watchedList.includes(i)) {
+                    watchedList.push(i);
+                }
+            }
+            watchedList.sort((a, b) => a - b);
+        }
+
+        const isCompleted = (totalEps > 0 && watchedList.length >= totalEps) || Boolean(currentProg.isCompleted);
 
         const updatedRecord = {
             key: key,
             url: rawUrl,
+            canonicalUrl: (typeof drama === 'object' ? drama.canonicalUrl : '') || rawUrl,
             docId: docId,
+            book_id: coreId,
+            provider: providerName,
+            title: dramaTitle,
             lastWatchedEp: ep,
             lastWatchedAt: Date.now(),
-            watchedList: watchedList
+            watchedList: watchedList,
+            watchedCount: watchedList.length,
+            episodes: totalEps,
+            isCompleted: isCompleted
         };
 
-        this.data.progress[key] = updatedRecord;
-        if (docId) this.data.progress[docId] = updatedRecord;
-        if (rawUrl) this.data.progress[rawUrl] = updatedRecord;
+        this.indexProgressRecord(updatedRecord);
+
+        // If this drama is bookmarked and we now know real episode count, sync it
+        if (this.data.bookmarks[key] && totalEps > 0) {
+            this.data.bookmarks[key].episodes = totalEps;
+        }
 
         try {
             localStorage.setItem('reeldrama_progress', JSON.stringify(this.data.progress));
         } catch (_) {}
+
+        this.syncProgressToBookmark(drama, updatedRecord);
 
         if (this.currentUser && window.FirebaseService && window.FirebaseService.isReady()) {
             const rtdb = window.FirebaseService.getRtdb();
@@ -971,9 +1327,13 @@ const UserDataManager = {
             const payload = {
                 key: key,
                 url: rawUrl,
+                title: dramaTitle,
+                book_id: coreId,
                 lastWatchedEp: ep,
                 lastWatchedAt: Date.now(),
-                watchedList: watchedList
+                watchedList: watchedList,
+                watchedCount: watchedList.length,
+                episodes: totalEps
             };
             if (rtdb) {
                 rtdb.ref(`users/${this.currentUser.uid}/progress/${docId}`).set(payload).catch(() => {});
@@ -983,9 +1343,11 @@ const UserDataManager = {
         }
 
         updateVisibleCardProgress();
-        if (AppState.selectedDrama && elements.quickViewModal && elements.quickViewModal.classList.contains('active')) {
+        if (AppState.selectedDrama && (AppState.mode === 'detail' || (elements.quickViewModal && elements.quickViewModal.classList.contains('active')))) {
             if (AppState.selectedDrama.episodeList && AppState.selectedDrama.episodeList.length > 0) {
                 renderEpisodesList(AppState.selectedDrama.episodeList, AppState.selectedDrama.episodes);
+            } else {
+                updateDetailPagePlayCta(AppState.selectedDrama);
             }
         }
         if (PlayerState.currentDrama && elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) {
@@ -998,47 +1360,81 @@ const UserDataManager = {
         const key = this.getDramaKey(drama);
         if (!key) return;
 
+        // If progress is already completed (100% watched / rewatching), do not overwrite progress
+        if (this.isProgressCompleted(drama)) {
+            return;
+        }
+
         const ep = parseInt(epNum, 10) || 1;
         const currentProg = this.getDramaProgress(drama);
-        // Include ep itself and backfill all preceding episodes (1 to ep)
-        const prevEps = [];
-        for (let i = 1; i <= ep; i++) {
-            prevEps.push(i);
+        let watchedList = Array.isArray(currentProg.watchedList) ? [...currentProg.watchedList] : [];
+
+        let totalEps = (typeof drama === 'object' && drama.episodes && Number(drama.episodes) > 0)
+            ? Number(drama.episodes)
+            : (drama && Array.isArray(drama.episodeList) && drama.episodeList.length > 0 ? drama.episodeList.length : 0);
+
+        if (!totalEps && typeof PlayerState !== 'undefined' && PlayerState.episodes && PlayerState.episodes.length > 0) {
+            totalEps = PlayerState.episodes.length;
         }
-        const watchedList = Array.from(new Set([...(currentProg.watchedList || []), ...prevEps])).sort((a, b) => a - b);
+        if (!totalEps && currentProg.episodes && Number(currentProg.episodes) > 0) {
+            totalEps = Number(currentProg.episodes);
+        }
+        if (!totalEps) {
+            const bookmark = this.findMatchingBookmark(drama);
+            if (bookmark && bookmark.episodes > 0) totalEps = Number(bookmark.episodes);
+        }
+
+        // Offset-of-1 rule: episode ep is not added until ep + 1, unless it's the final episode
+        let upToEp = ep - 1;
+        if (totalEps > 0 && ep >= totalEps) {
+            upToEp = totalEps;
+        }
+
+        if (upToEp > 0) {
+            for (let i = 1; i <= upToEp; i++) {
+                if (!watchedList.includes(i)) {
+                    watchedList.push(i);
+                }
+            }
+            watchedList.sort((a, b) => a - b);
+        }
+
         const docId = this.getDramaDocId(drama);
         const rawUrl = typeof drama === 'string' ? drama : (drama.url || '');
+        const dramaTitle = typeof drama === 'object' ? (drama.title || '') : '';
+        const coreId = this.extractCoreId(drama);
+        const providerName = typeof drama === 'object' ? (drama.provider || drama.category_name || '') : '';
+
+        const isCompleted = (totalEps > 0 && watchedList.length >= totalEps) || Boolean(currentProg.isCompleted);
 
         const updatedRecord = {
             key: key,
             url: rawUrl,
+            canonicalUrl: (typeof drama === 'object' ? drama.canonicalUrl : '') || rawUrl,
             docId: docId,
+            book_id: coreId,
+            provider: providerName,
+            title: dramaTitle,
             lastWatchedEp: ep,
             lastWatchedAt: Date.now(),
-            watchedList: watchedList
+            watchedList: watchedList,
+            watchedCount: watchedList.length,
+            episodes: totalEps,
+            isCompleted: isCompleted
         };
 
-        this.data.progress[key] = updatedRecord;
-        if (docId) this.data.progress[docId] = updatedRecord;
-        if (rawUrl) this.data.progress[rawUrl] = updatedRecord;
+        this.indexProgressRecord(updatedRecord);
 
         // If this drama is bookmarked and we now know real episode count, sync it
-        if (this.data.bookmarks[key] && drama.episodes && drama.episodes > 0) {
-            this.data.bookmarks[key].episodes = drama.episodes;
-            if (this.currentUser && window.FirebaseService && window.FirebaseService.isReady()) {
-                const rtdb = window.FirebaseService.getRtdb();
-                const db = window.FirebaseService.getDb();
-                if (rtdb) {
-                    rtdb.ref(`users/${this.currentUser.uid}/bookmarks/${docId}`).update({ episodes: drama.episodes }).catch(() => {});
-                } else if (db) {
-                    db.collection('users').doc(this.currentUser.uid).collection('bookmarks').doc(docId).set({ episodes: drama.episodes }, { merge: true }).catch(() => {});
-                }
-            }
+        if (this.data.bookmarks[key] && totalEps > 0) {
+            this.data.bookmarks[key].episodes = totalEps;
         }
 
         try {
             localStorage.setItem('reeldrama_progress', JSON.stringify(this.data.progress));
         } catch (_) {}
+
+        this.syncProgressToBookmark(drama, updatedRecord);
 
         if (this.currentUser && window.FirebaseService && window.FirebaseService.isReady()) {
             const rtdb = window.FirebaseService.getRtdb();
@@ -1046,9 +1442,13 @@ const UserDataManager = {
             const payload = {
                 key: key,
                 url: rawUrl,
+                title: dramaTitle,
+                book_id: coreId,
                 lastWatchedEp: ep,
                 lastWatchedAt: Date.now(),
-                watchedList: watchedList
+                watchedList: watchedList,
+                watchedCount: watchedList.length,
+                episodes: totalEps
             };
             if (rtdb) {
                 rtdb.ref(`users/${this.currentUser.uid}/progress/${docId}`).set(payload).catch(() => {});
@@ -1058,9 +1458,11 @@ const UserDataManager = {
         }
 
         updateVisibleCardProgress();
-        if (AppState.selectedDrama && elements.quickViewModal && elements.quickViewModal.classList.contains('active')) {
+        if (AppState.selectedDrama && (AppState.mode === 'detail' || (elements.quickViewModal && elements.quickViewModal.classList.contains('active')))) {
             if (AppState.selectedDrama.episodeList && AppState.selectedDrama.episodeList.length > 0) {
                 renderEpisodesList(AppState.selectedDrama.episodeList, AppState.selectedDrama.episodes);
+            } else {
+                updateDetailPagePlayCta(AppState.selectedDrama);
             }
         }
         if (PlayerState.currentDrama && elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) {
@@ -1075,7 +1477,7 @@ const UserDataManager = {
 
         const ep = parseInt(epNum, 10) || 1;
         const currentProg = this.getDramaProgress(drama);
-        let watchedList = [...currentProg.watchedList];
+        let watchedList = Array.isArray(currentProg.watchedList) ? [...currentProg.watchedList] : [];
         let nowWatched = false;
 
         const idx = watchedList.indexOf(ep);
@@ -1090,24 +1492,38 @@ const UserDataManager = {
 
         const docId = this.getDramaDocId(drama);
         const rawUrl = typeof drama === 'string' ? drama : (drama.url || '');
+        const dramaTitle = typeof drama === 'object' ? (drama.title || '') : '';
+        const coreId = this.extractCoreId(drama);
+        const providerName = typeof drama === 'object' ? (drama.provider || drama.category_name || '') : '';
+        const totalEps = (typeof drama === 'object' && drama.episodes) ? drama.episodes : (currentProg.episodes || 0);
+
         const lastEp = nowWatched ? ep : (watchedList.length > 0 ? Math.max(...watchedList) : 1);
+
+        const isCompleted = (totalEps > 0 && watchedList.length >= totalEps);
 
         const updatedRecord = {
             key: key,
             url: rawUrl,
+            canonicalUrl: (typeof drama === 'object' ? drama.canonicalUrl : '') || rawUrl,
             docId: docId,
+            book_id: coreId,
+            provider: providerName,
+            title: dramaTitle,
             lastWatchedEp: lastEp,
             lastWatchedAt: Date.now(),
-            watchedList: watchedList
+            watchedList: watchedList,
+            watchedCount: watchedList.length,
+            episodes: totalEps,
+            isCompleted: isCompleted
         };
 
-        this.data.progress[key] = updatedRecord;
-        if (docId) this.data.progress[docId] = updatedRecord;
-        if (rawUrl) this.data.progress[rawUrl] = updatedRecord;
+        this.indexProgressRecord(updatedRecord);
 
         try {
             localStorage.setItem('reeldrama_progress', JSON.stringify(this.data.progress));
         } catch (_) {}
+
+        this.syncProgressToBookmark(drama, updatedRecord);
 
         if (this.currentUser && window.FirebaseService && window.FirebaseService.isReady()) {
             const rtdb = window.FirebaseService.getRtdb();
@@ -1115,9 +1531,13 @@ const UserDataManager = {
             const payload = {
                 key: key,
                 url: rawUrl,
+                title: dramaTitle,
+                book_id: coreId,
                 lastWatchedEp: lastEp,
                 lastWatchedAt: Date.now(),
-                watchedList: watchedList
+                watchedList: watchedList,
+                watchedCount: watchedList.length,
+                episodes: totalEps
             };
             if (rtdb) {
                 rtdb.ref(`users/${this.currentUser.uid}/progress/${docId}`).set(payload).catch(() => {});
@@ -1128,6 +1548,54 @@ const UserDataManager = {
 
         updateVisibleCardProgress();
         return nowWatched;
+    },
+
+    saveDramaEpisodes(drama, totalEpisodes) {
+        if (!drama || !totalEpisodes || totalEpisodes <= 0) return;
+        const key = this.getDramaKey(drama);
+        if (!key) return;
+
+        const currentProg = this.getDramaProgress(drama);
+        const watchedList = Array.isArray(currentProg.watchedList) ? currentProg.watchedList : [];
+        const isCompleted = (watchedList.length >= totalEpisodes) || Boolean(currentProg.isCompleted);
+
+        // Update progress record in cache & localStorage
+        if (this.data.progress[key] || watchedList.length > 0) {
+            const existing = this.data.progress[key] || {
+                key: key,
+                url: typeof drama === 'string' ? drama : (drama.url || ''),
+                canonicalUrl: (typeof drama === 'object' ? drama.canonicalUrl : '') || (drama.url || ''),
+                docId: this.getDramaDocId(drama),
+                book_id: this.extractCoreId(drama),
+                provider: typeof drama === 'object' ? (drama.provider || drama.category_name || '') : '',
+                title: typeof drama === 'object' ? (drama.title || '') : '',
+                lastWatchedEp: currentProg.lastWatchedEp || 1,
+                lastWatchedAt: currentProg.lastWatchedAt || Date.now(),
+                watchedList: watchedList,
+                watchedCount: watchedList.length
+            };
+            existing.episodes = Math.max(Number(existing.episodes) || 0, totalEpisodes);
+            if (isCompleted) existing.isCompleted = true;
+            this.indexProgressRecord(existing);
+            try {
+                localStorage.setItem('reeldrama_progress', JSON.stringify(this.data.progress));
+            } catch (_) {}
+        }
+
+        // Sync with bookmark if saved
+        const bookmark = this.findMatchingBookmark(drama);
+        if (bookmark) {
+            bookmark.episodes = Math.max(Number(bookmark.episodes) || 0, totalEpisodes);
+            if (isCompleted) bookmark.isCompleted = true;
+            const bKey = this.getDramaKey(bookmark);
+            if (this.data.bookmarks[bKey]) {
+                this.data.bookmarks[bKey].episodes = bookmark.episodes;
+                if (isCompleted) this.data.bookmarks[bKey].isCompleted = true;
+            }
+            try {
+                localStorage.setItem('reeldrama_bookmarks', JSON.stringify(this.data.bookmarks));
+            } catch (_) {}
+        }
     }
 };
 
@@ -1135,6 +1603,7 @@ const UserDataManager = {
 const elements = {
     body: document.body,
     appSplash: getEl('app-splash-screen'),
+    splashStatusText: getEl('splash-status-text'),
     appAuth: getEl('app-auth-screen'),
     appMainLayout: getEl('app-main-layout'),
     authScreenGoogleBtn: getEl('auth-screen-google-btn'),
@@ -1148,6 +1617,7 @@ const elements = {
     pwaGuideOkBtn: getEl('pwa-guide-ok-btn'),
     heroLogo: getEl('hero-logo'),
     heroSection: getEl('hero-section'),
+    navSearchWrap: getEl('nav-search-wrap'),
     searchForm: getEl('search-form'),
     searchInput: getEl('search-input'),
     searchClearBtn: getEl('search-clear-btn'),
@@ -1201,22 +1671,56 @@ const elements = {
     bookmarksSearchEmptyDesc: getEl('bookmarks-search-empty-desc'),
     bookmarksClearSearchBtn: getEl('bookmarks-clear-search-btn'),
 
-    // Quick View Modal
-    quickViewModal: getEl('quick-view-modal'),
-    quickViewCloseBtn: getEl('quick-view-close'),
-    quickViewPoster: getEl('quick-view-poster'),
-    quickViewTitle: getEl('quick-view-title'),
-    quickViewMeta: getEl('quick-view-meta'),
-    quickViewDesc: getEl('quick-view-desc'),
-    quickViewDescToggle: getEl('quick-view-desc-toggle'),
-    quickViewEpisodesCount: getEl('quick-view-ep-count'),
-    quickViewProgressText: getEl('quick-view-progress-text'),
-    quickViewProgressBarWrap: getEl('quick-view-progress-bar-wrap'),
-    quickViewProgressBarFill: getEl('quick-view-progress-bar-fill'),
-    quickViewEpisodesTabs: getEl('quick-view-episodes-tabs'),
-    quickViewEpisodesLoading: getEl('quick-view-episodes-loading'),
-    quickViewEpisodesGrid: getEl('quick-view-episodes-grid'),
-    quickViewStreamBtn: getEl('quick-view-stream-btn'),
+    // Dedicated Drama Detail Page View
+    detailPage: getEl('drama-detail-page'),
+    detailBackBtn: getEl('detail-back-btn'),
+    detailNavTitle: getEl('detail-nav-title'),
+    detailShareBtn: getEl('detail-share-btn'),
+    detailHeroBackdrop: getEl('detail-hero-backdrop'),
+    detailPoster: getEl('detail-poster'),
+    detailMainTitle: getEl('detail-main-title'),
+    detailProviderPill: getEl('detail-provider-pill'),
+    detailRatingVal: getEl('detail-rating-val'),
+    detailEpCount: getEl('detail-ep-count'),
+    detailGenresRow: getEl('detail-genres-row'),
+    detailPlayCta: getEl('detail-play-cta'),
+    detailPlayCtaText: getEl('detail-play-cta-text'),
+    detailPlayCtaIcon: getEl('detail-play-cta-icon'),
+    detailBookmarkCta: getEl('detail-bookmark-cta'),
+    detailBookmarkIcon: getEl('detail-bookmark-icon'),
+    detailBookmarkText: getEl('detail-bookmark-text'),
+    detailProgressWrap: getEl('detail-progress-wrap'),
+    detailProgressStats: getEl('detail-progress-stats'),
+    detailProgressBarFill: getEl('detail-progress-bar-fill'),
+    detailSynopsisText: getEl('detail-synopsis-text'),
+    detailSynopsisToggle: getEl('detail-synopsis-toggle'),
+    detailTabEpisodesCount: getEl('detail-tab-episodes-count'),
+    detailEpisodesSearchInput: getEl('detail-episodes-search-input'),
+    detailRangeSelectWrap: getEl('detail-range-select-wrap'),
+    detailRangeTrigger: getEl('detail-range-trigger'),
+    detailRangeTriggerText: getEl('detail-range-trigger-text'),
+    detailRangeMenu: getEl('detail-range-menu'),
+    detailEpisodesRangeSelect: getEl('detail-episodes-range-select'),
+    detailEpisodesRanges: getEl('detail-episodes-ranges'),
+    detailEpisodesLoading: getEl('detail-episodes-loading'),
+    detailEpisodesGrid: getEl('detail-episodes-grid'),
+
+    // Aliases for quickView to maintain complete backwards compatibility
+    quickViewModal: getEl('drama-detail-page'),
+    quickViewCloseBtn: getEl('detail-back-btn'),
+    quickViewPoster: getEl('detail-poster'),
+    quickViewTitle: getEl('detail-main-title'),
+    quickViewMeta: getEl('detail-genres-row'),
+    quickViewDesc: getEl('detail-synopsis-text'),
+    quickViewDescToggle: getEl('detail-synopsis-toggle'),
+    quickViewEpisodesCount: getEl('detail-ep-count'),
+    quickViewProgressText: getEl('detail-progress-stats'),
+    quickViewProgressBarWrap: getEl('detail-progress-wrap'),
+    quickViewProgressBarFill: getEl('detail-progress-bar-fill'),
+    quickViewEpisodesTabs: getEl('detail-episodes-ranges'),
+    quickViewEpisodesLoading: getEl('detail-episodes-loading'),
+    quickViewEpisodesGrid: getEl('detail-episodes-grid'),
+    quickViewStreamBtn: getEl('detail-play-cta'),
 
     // TikTok-Style Immersive Reels Video Player Modal
     playerModal: getEl('player-modal'),
@@ -1245,6 +1749,9 @@ const elements = {
     playerLikeBtn: getEl('player-like-btn'),
     playerLikeIcon: getEl('player-like-icon'),
     playerLikeCount: getEl('player-like-count'),
+    playerBookmarkBtn: getEl('player-bookmark-btn'),
+    playerBookmarkIcon: getEl('player-bookmark-icon'),
+    playerBookmarkLabel: getEl('player-bookmark-label'),
     playerDrawerBtn: getEl('player-drawer-btn'),
     playerPrevEpBtn: getEl('player-prev-ep-btn'),
     playerNextEpBtn: getEl('player-next-ep-btn'),
@@ -1267,6 +1774,11 @@ const elements = {
     sheetProgressBarWrap: getEl('sheet-progress-bar-wrap'),
     sheetProgressBarFill: getEl('sheet-progress-bar-fill'),
     sheetEpisodesTabs: getEl('sheet-episodes-tabs'),
+    sheetRangeSelectWrap: getEl('sheet-range-select-wrap'),
+    sheetRangeTrigger: getEl('sheet-range-trigger'),
+    sheetRangeTriggerText: getEl('sheet-range-trigger-text'),
+    sheetRangeMenu: getEl('sheet-range-menu'),
+    sheetEpisodesSearchInput: getEl('sheet-episodes-search-input'),
     playerEpisodesStrip: getEl('player-episodes-strip'),
 
     // Proxy Settings Modal (Optional)
@@ -1306,6 +1818,7 @@ const elements = {
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
+    initAppSplash();
     UserDataManager.init();
     setupEventListeners();
     syncUserProfileLocation();
@@ -1360,9 +1873,9 @@ document.addEventListener('DOMContentLoaded', () => {
             closePlayer();
             return;
         }
-        // If Quick View modal is open, back gesture closes Quick View modal smoothly without reloading page
-        if (elements.quickViewModal && elements.quickViewModal.classList.contains('active')) {
-            closeQuickView();
+        // If Detail page is open, back gesture restores the previous view smoothly without reloading
+        if (AppState.mode === 'detail') {
+            closeDramaDetailPage();
             return;
         }
 
@@ -1489,41 +2002,80 @@ function setupEventListeners() {
         });
     }
 
-    // Modal Events - Quick View
-    if (elements.quickViewCloseBtn) {
-        elements.quickViewCloseBtn.addEventListener('click', closeQuickView);
+    // Drama Detail Page Events
+    if (elements.detailBackBtn) {
+        elements.detailBackBtn.addEventListener('click', closeDramaDetailPage);
     }
-    if (elements.quickViewModal) {
-        elements.quickViewModal.addEventListener('click', (e) => {
-            if (e.target === elements.quickViewModal) closeQuickView();
+    if (elements.detailShareBtn) {
+        elements.detailShareBtn.addEventListener('click', () => {
+            if (!AppState.selectedDrama) return;
+            const drama = AppState.selectedDrama;
+            const shareData = {
+                title: drama.title || 'Short Reels Drama',
+                text: `Watch ${drama.title || 'this drama'} on ShortReels!`,
+                url: window.location.href
+            };
+            if (navigator.share && navigator.canShare && navigator.canShare(shareData)) {
+                navigator.share(shareData).catch(() => {});
+            } else {
+                try {
+                    navigator.clipboard.writeText(window.location.href);
+                    showToast('Drama link copied to clipboard!', 'success');
+                } catch (_) {
+                    showToast('Link: ' + window.location.href, 'info');
+                }
+            }
         });
     }
-    if (elements.quickViewDescToggle) {
-        elements.quickViewDescToggle.addEventListener('click', (e) => {
+    if (elements.detailSynopsisToggle) {
+        elements.detailSynopsisToggle.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (!elements.quickViewDesc) return;
-            const isExp = elements.quickViewDesc.classList.toggle('expanded');
-            elements.quickViewDescToggle.textContent = isExp ? 'less' : 'more';
-            elements.quickViewDescToggle.setAttribute('aria-expanded', isExp ? 'true' : 'false');
+            if (!elements.detailSynopsisText) return;
+            const isExp = elements.detailSynopsisText.classList.toggle('expanded');
+            elements.detailSynopsisToggle.textContent = isExp ? 'less' : 'more';
+            elements.detailSynopsisToggle.setAttribute('aria-expanded', isExp ? 'true' : 'false');
         });
     }
-    if (elements.quickViewDesc) {
-        elements.quickViewDesc.addEventListener('click', () => {
-            const toggleBtn = elements.quickViewDescToggle || getEl('quick-view-desc-toggle');
+    if (elements.detailSynopsisText) {
+        elements.detailSynopsisText.addEventListener('click', () => {
+            const toggleBtn = elements.detailSynopsisToggle || elements.quickViewDescToggle;
             if (toggleBtn && toggleBtn.style.display !== 'none') {
-                const isExp = elements.quickViewDesc.classList.toggle('expanded');
+                const isExp = elements.detailSynopsisText.classList.toggle('expanded');
                 toggleBtn.textContent = isExp ? 'less' : 'more';
                 toggleBtn.setAttribute('aria-expanded', isExp ? 'true' : 'false');
             }
         });
     }
-    if (elements.quickViewStreamBtn) {
-        elements.quickViewStreamBtn.addEventListener('click', () => {
-            if (AppState.selectedDrama) {
-                const ep1Url = (AppState.selectedDrama.episodeList && AppState.selectedDrama.episodeList[0]) 
-                    ? AppState.selectedDrama.episodeList[0].url 
-                    : getEpisodeWatchUrl(AppState.selectedDrama.url, 1);
-                playEpisode(AppState.selectedDrama, 1, ep1Url);
+    if (elements.detailPlayCta) {
+        elements.detailPlayCta.addEventListener('click', () => {
+            if (!AppState.selectedDrama) return;
+            const drama = AppState.selectedDrama;
+            const targetEp = parseInt(elements.detailPlayCta.getAttribute('data-target-ep'), 10) || 1;
+            let targetEpUrl = '';
+            if (drama.episodeList && drama.episodeList.length > 0) {
+                const epObj = drama.episodeList.find(e => {
+                    const n = typeof e.number === 'number' ? e.number : parseInt(String(e.number || '').replace(/\D+/g, ''), 10);
+                    return n === targetEp;
+                });
+                if (epObj && epObj.url) targetEpUrl = epObj.url;
+            }
+            if (!targetEpUrl) {
+                targetEpUrl = getEpisodeWatchUrl(drama.url, targetEp);
+            }
+            playEpisode(drama, targetEp, targetEpUrl);
+        });
+    }
+    if (elements.detailBookmarkCta) {
+        elements.detailBookmarkCta.addEventListener('click', async () => {
+            if (!AppState.selectedDrama) return;
+            try {
+                const nowSaved = await UserDataManager.toggleBookmark(AppState.selectedDrama);
+                updateDetailPageBookmarkCta(AppState.selectedDrama);
+                updateVisibleBookmarkButtons();
+                showToast(nowSaved ? `Saved "${AppState.selectedDrama.title}" to My List` : `Removed "${AppState.selectedDrama.title}" from Saved`);
+            } catch (err) {
+                console.error('[Detail Bookmark Toggle Error]:', err);
+                showToast('Could not sync bookmark with Firebase', 'error');
             }
         });
     }
@@ -1546,13 +2098,19 @@ function setupEventListeners() {
     if (elements.playerPrevEpBtn) {
         elements.playerPrevEpBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            playPrevEpisode();
+            resetPlayerControlsTimer();
+            triggerReelSwipeTransition('down', () => {
+                playPrevEpisode(true);
+            });
         });
     }
     if (elements.playerNextEpBtn) {
         elements.playerNextEpBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            playNextEpisode();
+            resetPlayerControlsTimer();
+            triggerReelSwipeTransition('up', () => {
+                playNextEpisode(true);
+            });
         });
     }
     if (elements.playerRetryStreamBtn) {
@@ -1560,6 +2118,35 @@ function setupEventListeners() {
             e.stopPropagation();
             if (PlayerState.currentDrama) {
                 playEpisode(PlayerState.currentDrama, PlayerState.currentEpisodeNumber, PlayerState.currentEpisodeUrl, true);
+            }
+        });
+    }
+    if (elements.playerBookmarkBtn) {
+        elements.playerBookmarkBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!PlayerState.currentDrama) return;
+
+            if (!UserDataManager.currentUser) {
+                showToast('Please sign in with Google to save reels', 'info');
+                handleGoogleSignIn();
+                return;
+            }
+
+            const drama = PlayerState.currentDrama;
+            const currentEp = PlayerState.currentEpisodeNumber || 1;
+
+            // Make sure current episode position and offset-1 range are recorded first
+            UserDataManager.setLastWatchedEpisode(drama, currentEp);
+
+            try {
+                const nowSaved = await UserDataManager.toggleBookmark(drama);
+                updatePlayerBookmarkButton(drama);
+                updateVisibleBookmarkButtons();
+                updateDetailPageBookmarkCta(drama);
+                showToast(nowSaved ? `Saved "${drama.title}" to My List` : `Removed "${drama.title}" from My List`);
+            } catch (err) {
+                console.error('[UserDataManager] Player bookmark toggle error:', err);
+                showToast('Could not sync bookmark with Firebase', 'error');
             }
         });
     }
@@ -1719,10 +2306,16 @@ function setupEventListeners() {
         });
     }
 
-    // Close user profile dropdown when clicking outside
+    // Close dropdowns when clicking outside
     document.addEventListener('click', (e) => {
         if (elements.userProfileWrap && !elements.userProfileWrap.contains(e.target)) {
             closeUserProfileDropdown();
+        }
+        if (elements.detailRangeSelectWrap && !elements.detailRangeSelectWrap.contains(e.target)) {
+            closeDetailRangeMenu();
+        }
+        if (elements.sheetRangeSelectWrap && !elements.sheetRangeSelectWrap.contains(e.target)) {
+            closeSheetRangeMenu();
         }
     });
 
@@ -1758,8 +2351,12 @@ function setupEventListeners() {
             e.preventDefault();
             if (elements.searchInput) elements.searchInput.focus();
         } else if (e.key === 'Escape') {
+            closeDetailRangeMenu();
+            closeSheetRangeMenu();
             closePlayer();
-            closeQuickView();
+            if (AppState.mode === 'detail') {
+                closeDramaDetailPage();
+            }
             closeModal(elements.proxyModal);
             closeModal(elements.pwaGuideModal);
             closeModal(elements.firebaseGuideModal);
@@ -1809,13 +2406,22 @@ function setupZoomPrevention() {
  * Switch View Mode: 'home' | 'results' | 'bookmarks'
  */
 function setAppMode(mode) {
+    if (mode !== 'detail') {
+        AppState.lastMainMode = mode;
+    }
     AppState.mode = mode;
     if (elements.body) {
         elements.body.className = `app-mode-${mode}`;
     }
     if (mode === 'home') {
         hideAllResults();
+        if (elements.navSearchWrap) elements.navSearchWrap.style.display = '';
+        if (elements.detailPage) elements.detailPage.style.display = 'none';
         if (elements.heroSection) elements.heroSection.style.display = 'flex';
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+        if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'none';
         if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.remove('active');
         if (elements.m3NavExplore) elements.m3NavExplore.classList.add('active');
         if (elements.m3NavSaved) elements.m3NavSaved.classList.remove('active');
@@ -1823,7 +2429,12 @@ function setAppMode(mode) {
         if (elements.railNavSaved) elements.railNavSaved.classList.remove('active');
     } else if (mode === 'bookmarks') {
         hideAllResults();
+        if (elements.navSearchWrap) elements.navSearchWrap.style.display = 'none';
+        if (elements.detailPage) elements.detailPage.style.display = 'none';
         if (elements.heroSection) elements.heroSection.style.display = 'none';
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'none';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'none';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'none';
         if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'block';
         if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.add('active');
         if (elements.m3NavExplore) elements.m3NavExplore.classList.remove('active');
@@ -1832,13 +2443,27 @@ function setAppMode(mode) {
         if (elements.railNavSaved) elements.railNavSaved.classList.add('active');
         renderBookmarksView();
     } else if (mode === 'results') {
+        if (elements.navSearchWrap) elements.navSearchWrap.style.display = '';
+        if (elements.detailPage) elements.detailPage.style.display = 'none';
         if (elements.heroSection) elements.heroSection.style.display = 'flex';
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
         if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'none';
         if (elements.navBookmarkBtn) elements.navBookmarkBtn.classList.remove('active');
         if (elements.m3NavExplore) elements.m3NavExplore.classList.add('active');
         if (elements.m3NavSaved) elements.m3NavSaved.classList.remove('active');
         if (elements.railNavHome) elements.railNavHome.classList.add('active');
         if (elements.railNavSaved) elements.railNavSaved.classList.remove('active');
+    } else if (mode === 'detail') {
+        if (elements.navSearchWrap) elements.navSearchWrap.style.display = 'none';
+        if (elements.heroSection) elements.heroSection.style.display = 'none';
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'none';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'none';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'none';
+        if (elements.bookmarksSection) elements.bookmarksSection.style.display = 'none';
+        if (elements.detailPage) elements.detailPage.style.display = 'block';
+        window.scrollTo({ top: 0, behavior: 'instant' });
     }
 }
 
@@ -1875,7 +2500,11 @@ function renderBookmarksView() {
 
     if (elements.bookmarksAuthState) elements.bookmarksAuthState.style.display = 'none';
 
-    const allBookmarks = UserDataManager.getBookmarksList();
+    const allBookmarks = UserDataManager.getBookmarksList().filter(item => {
+        const u = item && item.url ? item.url.trim() : '';
+        const p = item && item.poster ? item.poster.trim() : '';
+        return !/^file:/i.test(u) && !u.includes('file:///') && !/^file:/i.test(p) && !p.includes('file:///');
+    });
 
     if (elements.bookmarksCountBadge) {
         elements.bookmarksCountBadge.textContent = `${allBookmarks.length} ${allBookmarks.length === 1 ? 'reel' : 'reels'}`;
@@ -1945,15 +2574,95 @@ function getDefaultAvatar(name) {
     return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
+let splashDismissed = false;
+const splashStartTime = performance.now();
+
+/**
+ * Dismiss the app splash screen with a cinematic fade-out on fresh open,
+ * or immediately without delay on page refresh.
+ */
+function dismissAppSplash(onDismissed) {
+    if (splashDismissed) {
+        if (typeof onDismissed === 'function') onDismissed();
+        return;
+    }
+    splashDismissed = true;
+    sessionStorage.setItem('reeldrama_session_active', '1');
+    document.documentElement.classList.add('no-splash');
+
+    const splash = elements.appSplash || document.getElementById('app-splash-screen');
+    if (!splash) {
+        if (typeof onDismissed === 'function') onDismissed();
+        return;
+    }
+
+    const isRefreshOrReload = document.documentElement.classList.contains('is-refresh') ||
+                              document.documentElement.classList.contains('no-splash') ||
+                              splash.offsetParent === null;
+
+    if (isRefreshOrReload) {
+        splash.style.display = 'none';
+        if (typeof onDismissed === 'function') onDismissed();
+        return;
+    }
+
+    // On fresh app launch, provide a smooth minimum duration (~700ms) for visual polish
+    const elapsed = performance.now() - splashStartTime;
+    const delay = Math.max(0, 700 - elapsed);
+
+    setTimeout(() => {
+        splash.classList.add('splash-fade-out');
+        setTimeout(() => {
+            splash.style.display = 'none';
+            if (typeof onDismissed === 'function') onDismissed();
+        }, 420);
+    }, delay);
+}
+
+/**
+ * Initialize splash screen state checking for refresh vs cold launch
+ */
+function initAppSplash() {
+    let isReload = false;
+    try {
+        if (window.performance) {
+            const nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || null;
+            if (nav && nav.type === 'reload') isReload = true;
+            else if (performance.navigation && performance.navigation.type === 1) isReload = true;
+        }
+    } catch (_) {}
+
+    if (sessionStorage.getItem('reeldrama_session_active') || isReload) {
+        splashDismissed = true;
+        document.documentElement.classList.add('no-splash');
+        if (elements.appSplash) elements.appSplash.style.display = 'none';
+        return;
+    }
+
+    // Safety fallback: if Firebase network takes unusually long on fresh open, dismiss after 2.8s
+    setTimeout(() => {
+        if (!splashDismissed) {
+            const statusEl = elements.splashStatusText || document.getElementById('splash-status-text');
+            if (statusEl) statusEl.textContent = 'Connecting...';
+            setTimeout(() => {
+                dismissAppSplash();
+            }, 500);
+        }
+    }, 2800);
+}
+
 /**
  * Handle Firebase Authentication State Changes
  */
 function handleAuthStateChange(user) {
     if (user) {
         console.log('[Auth] User signed in:', user.displayName, user.email);
-        if (elements.appSplash) elements.appSplash.style.display = 'none';
-        if (elements.appAuth) elements.appAuth.style.display = 'none';
-        if (elements.appMainLayout) elements.appMainLayout.style.display = 'block';
+        localStorage.setItem('reeldrama_auth_user', '1');
+
+        dismissAppSplash(() => {
+            if (elements.appAuth) elements.appAuth.style.display = 'none';
+            if (elements.appMainLayout) elements.appMainLayout.style.display = 'block';
+        });
 
         if (elements.navGoogleBtn) elements.navGoogleBtn.style.display = 'none';
         if (elements.userProfileWrap) elements.userProfileWrap.style.display = 'flex';
@@ -1987,9 +2696,14 @@ function handleAuthStateChange(user) {
         }
     } else {
         console.log('[Auth] User is signed out.');
-        if (elements.appSplash) elements.appSplash.style.display = 'none';
-        if (elements.appMainLayout) elements.appMainLayout.style.display = 'none';
-        if (elements.appAuth) elements.appAuth.style.display = 'flex';
+        localStorage.removeItem('reeldrama_auth_user');
+        sessionStorage.removeItem('reeldrama_session_active');
+        document.documentElement.classList.remove('no-splash');
+
+        dismissAppSplash(() => {
+            if (elements.appMainLayout) elements.appMainLayout.style.display = 'none';
+            if (elements.appAuth) elements.appAuth.style.display = 'flex';
+        });
 
         if (elements.navGoogleBtn) elements.navGoogleBtn.style.display = 'inline-flex';
         if (elements.userProfileWrap) {
@@ -2053,6 +2767,17 @@ function closeUserProfileDropdown() {
 }
 
 /**
+ * Close Drama Detail Range Dropdown Menu
+ */
+function closeDetailRangeMenu() {
+    if (elements.detailRangeMenu) elements.detailRangeMenu.style.display = 'none';
+    if (elements.detailRangeTrigger) {
+        elements.detailRangeTrigger.classList.remove('open');
+        elements.detailRangeTrigger.setAttribute('aria-expanded', 'false');
+    }
+}
+
+/**
  * Trigger Google Sign In Popup
  */
 async function handleGoogleSignIn() {
@@ -2106,23 +2831,38 @@ function updateVisibleBookmarkButtons() {
             if (!btn) return;
             const itemUrl = card.getAttribute('data-url');
             const itemTitle = card.getAttribute('data-title') || '';
-            if (!itemUrl && !itemTitle) return;
-            const isSaved = UserDataManager.isBookmarked({ url: itemUrl, title: itemTitle });
+            const itemKey = card.getAttribute('data-key') || '';
+            const itemDocId = card.getAttribute('data-doc-id') || '';
+            const itemCoreId = card.getAttribute('data-core-id') || '';
+            const itemCanonicalUrl = card.getAttribute('data-canonical-url') || '';
+            const isSaved = UserDataManager.isBookmarked({
+                key: itemKey,
+                docId: itemDocId,
+                book_id: itemCoreId,
+                id: itemCoreId,
+                url: itemUrl,
+                canonicalUrl: itemCanonicalUrl,
+                title: itemTitle
+            });
             btn.classList.toggle('is-saved', isSaved);
             const iconEl = btn.querySelector('.bookmark-icon');
             const textEl = btn.querySelector('.bookmark-text');
-            if (iconEl) iconEl.innerHTML = isSaved ? ICON_TRASH_SVG : ICON_PLUS_SVG;
+            if (iconEl) iconEl.innerHTML = isSaved ? ICON_BOOKMARK_FILLED_SVG : ICON_BOOKMARK_OUTLINE_SVG;
             if (textEl) textEl.textContent = isSaved ? 'Saved' : 'Save';
-            btn.title = isSaved ? 'Remove from Saved' : 'Add to Watch Later';
-            btn.setAttribute('aria-label', isSaved ? 'Remove from Saved' : 'Add to Watch Later');
+            btn.title = isSaved ? 'Remove from My List' : 'Add to My List';
+            btn.setAttribute('aria-label', isSaved ? 'Remove from My List' : 'Add to My List');
         });
     };
     updateContainer(elements.animeGrid);
     updateContainer(elements.bookmarksGrid);
+
+    if (typeof updatePlayerBookmarkButton === 'function' && typeof PlayerState !== 'undefined' && PlayerState.currentDrama) {
+        updatePlayerBookmarkButton(PlayerState.currentDrama);
+    }
 }
 
 /**
- * Update watch progress bars and badges on all visible cards
+ * Update watch progress bars on all visible cards
  */
 function updateVisibleCardProgress() {
     const updateContainer = (container) => {
@@ -2131,30 +2871,48 @@ function updateVisibleCardProgress() {
         cards.forEach(card => {
             const itemUrl = card.getAttribute('data-url');
             const itemTitle = card.getAttribute('data-title') || '';
-            if (!itemUrl && !itemTitle) return;
+            const itemKey = card.getAttribute('data-key') || '';
+            const itemDocId = card.getAttribute('data-doc-id') || '';
+            const itemCoreId = card.getAttribute('data-core-id') || '';
+            const itemProvider = card.getAttribute('data-provider') || '';
+            const itemCanonicalUrl = card.getAttribute('data-canonical-url') || '';
+            if (!itemUrl && !itemTitle && !itemKey && !itemCoreId) return;
 
-            const prog = UserDataManager.getDramaProgress({ url: itemUrl, title: itemTitle });
+            const prog = UserDataManager.getDramaProgress({
+                key: itemKey,
+                docId: itemDocId,
+                book_id: itemCoreId,
+                id: itemCoreId,
+                url: itemUrl,
+                canonicalUrl: itemCanonicalUrl,
+                title: itemTitle,
+                provider: itemProvider
+            });
 
-            // Use lastWatchedEp as ground truth — it's the actual episode the user reached.
-            // watchedList may be sparse (only explicitly recorded entries), so its .length
-            // alone can be much smaller than how many eps the user has actually seen.
-            const watchedCount = Math.max(
-                (prog.watchedList || []).length,
-                prog.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0
-            );
+            // Exact watched count matches details view
+            const watchedList = Array.isArray(prog.watchedList) ? prog.watchedList : [];
+            const watchedCount = watchedList.length > 0
+                ? watchedList.length
+                : (prog.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0);
 
             const cardEpAttr = card.getAttribute('data-episodes');
-            const cardEpCount = parseInt(cardEpAttr, 10) || 0;
+            let cardEpCount = parseInt(cardEpAttr, 10) || 0;
+            if ((!cardEpCount || cardEpCount < watchedCount) && prog.episodes && prog.episodes > 0) {
+                cardEpCount = prog.episodes;
+                card.setAttribute('data-episodes', cardEpCount);
+            }
 
             const posterWrap = card.querySelector('.card-poster-wrap');
             let barWrap = card.querySelector('.card-progress-bar-wrap');
-            let watchedBadge = posterWrap?.querySelector('.card-badge-watched');
+            const watchedBadge = posterWrap?.querySelector('.card-badge-watched');
+            if (watchedBadge) {
+                watchedBadge.remove();
+            }
 
             if (watchedCount > 0) {
                 // Progress bar: percentage of total (or 100% if total unknown)
-                const progressPct = cardEpCount > 0
-                    ? Math.min(100, Math.round((watchedCount / cardEpCount) * 100))
-                    : 100;
+                const totalForPct = cardEpCount > 0 ? Math.max(cardEpCount, watchedCount) : watchedCount;
+                const progressPct = Math.min(100, Math.round((watchedCount / totalForPct) * 100));
 
                 if (!barWrap && posterWrap) {
                     barWrap = document.createElement('div');
@@ -2165,22 +2923,8 @@ function updateVisibleCardProgress() {
                 const barFill = barWrap?.querySelector('.card-progress-bar-fill');
                 if (barFill) barFill.style.width = `${progressPct}%`;
                 if (barWrap) barWrap.style.display = 'block';
-
-                // Always show "Watched X eps" — no fraction to avoid confusion.
-                const badgeText = `Watched ${watchedCount} eps`;
-
-                if (!watchedBadge && posterWrap) {
-                    watchedBadge = document.createElement('div');
-                    watchedBadge.className = 'card-badge-watched';
-                    watchedBadge.innerHTML = `<span>${badgeText}</span>`;
-                    posterWrap.appendChild(watchedBadge);
-                } else if (watchedBadge) {
-                    watchedBadge.innerHTML = `<span>${badgeText}</span>`;
-                    watchedBadge.style.display = 'inline-flex';
-                }
             } else {
                 if (barWrap) barWrap.style.display = 'none';
-                if (watchedBadge) watchedBadge.style.display = 'none';
             }
         });
     };
@@ -2373,8 +3117,8 @@ function parseProviderSectionsResponse(data, fallbackBaseUrl = 'https://narto-dr
  * Fetch fast JSON with sequential proxy waterfall
  */
 async function fetchFastJson(targetUrl) {
-    if (!targetUrl || typeof targetUrl !== 'string') {
-        throw new Error('Invalid URL');
+    if (!targetUrl || typeof targetUrl !== 'string' || /^file:\/\//i.test(targetUrl) || /^file:/i.test(targetUrl) || targetUrl.includes('file:///')) {
+        throw new Error('Invalid URL or disallowed file protocol.');
     }
 
     const DEFAULT_ND_SESSION_COOKIE = 'laravel-session=eyJpdiI6IkV4VjZWK2dnbHdCQmFMV2duU2IwOGc9PSIsInZhbHVlIjoiZVBpRHVOaktyNDlDYzM2Y1BHcVBRZzVSOWIwZkJpWUhMUm5SYzc1amllZkpPM2RsRFNxUURQaHFJdEMycko1c2RqajBNNTEvaUZVdzFUOHkyUEs0RXlUS2RqcnVzdTkydm1ZNmlrL3BjSThqL3kyUlYzNWNJOWNVTUp3alFLa3kiLCJtYWMiOiI5MmUzOWQ1YzNiZTI3NDE3MjA1ZDUwMzYxNDRkNDViZGRiNjdlZTk2MWZmZGQ0MjI2MGVkZTE1MzM2ZTlhZTFmIiwidGFnIjoiIn0%3D';
@@ -2819,9 +3563,11 @@ function applySort(items, sortVal = null) {
  */
 function renderAnimeCards(items, queryText = '', providerLabel = '', skipSort = false) {
     hideAllResults();
-    if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
-    if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
-    if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    if (AppState.mode !== 'detail' && AppState.mode !== 'bookmarks') {
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    }
     if (elements.animeGrid) elements.animeGrid.style.display = 'grid';
 
     // Synchronize sort-select dropdown with AppState.sortOrder
@@ -2886,11 +3632,11 @@ function attachCardListeners(containerEl, items, isBookmarkView = false) {
                         bookmarkBtn.classList.toggle('is-saved', nowSaved);
                         const iconEl = bookmarkBtn.querySelector('.bookmark-icon');
                         const textEl = bookmarkBtn.querySelector('.bookmark-text');
-                        if (iconEl) iconEl.innerHTML = nowSaved ? ICON_TRASH_SVG : ICON_PLUS_SVG;
+                        if (iconEl) iconEl.innerHTML = nowSaved ? ICON_BOOKMARK_FILLED_SVG : ICON_BOOKMARK_OUTLINE_SVG;
                         if (textEl) textEl.textContent = nowSaved ? 'Saved' : 'Save';
-                        bookmarkBtn.title = nowSaved ? 'Remove from Saved' : 'Add to Watch Later';
-                        bookmarkBtn.setAttribute('aria-label', nowSaved ? 'Remove from Saved' : 'Add to Watch Later');
-                        showToast(nowSaved ? `Saved "${item.title}" to My List` : `Removed "${item.title}" from Saved`);
+                        bookmarkBtn.title = nowSaved ? 'Remove from My List' : 'Add to My List';
+                        bookmarkBtn.setAttribute('aria-label', nowSaved ? 'Remove from My List' : 'Add to My List');
+                        showToast(nowSaved ? `Saved "${item.title}" to My List` : `Removed "${item.title}" from My List`);
                     }
                 } catch (err) {
                     console.error('[UserDataManager] Bookmark toggle error:', err);
@@ -3007,14 +3753,12 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
     const isSaved = UserDataManager.isBookmarked(item);
     const prog = UserDataManager.getDramaProgress(item);
 
-    // Use lastWatchedEp as ground truth — watchedList may be sparse (only explicit entries),
-    // so its .length alone can be much smaller than what the user has actually watched.
-    const watchedCount = Math.max(
-        prog.watchedList.length,
-        prog.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0
-    );
+    const watchedList = Array.isArray(prog.watchedList) ? prog.watchedList : [];
+    const watchedCount = watchedList.length > 0
+        ? watchedList.length
+        : (prog.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0);
 
-    const rawTotalEps = (item.episodes && item.episodes > 0) ? item.episodes : (item.episodeList ? item.episodeList.length : 0);
+    const rawTotalEps = (item.episodes && item.episodes > 0) ? item.episodes : (item.episodeList ? item.episodeList.length : (prog.episodes || 0));
     const totalEps = Math.max(rawTotalEps, watchedCount);
     const progressPct = totalEps > 0 ? Math.min(100, Math.round((watchedCount / totalEps) * 100)) : 0;
 
@@ -3022,20 +3766,28 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
         ? `<div class="card-progress-bar-wrap"><div class="card-progress-bar-fill" style="width: ${progressPct}%"></div></div>`
         : '';
 
-    // Show "Watched 30/45 eps" only when the server-provided episode count is strictly larger
-    // than what's been watched (meaning there are more eps to go). Otherwise just "Watched 30 eps".
-    const watchedBadgeMarkup = watchedCount > 0
-        ? `<div class="card-badge-watched"><span>Watched ${watchedCount} eps</span></div>`
-        : '';
-
     const posterMarkup = poster 
         ? `<img class="card-poster" src="${escapeHtml(poster)}" alt="${title}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null; this.src='${getPlaceholderSvgDataUri(title)}';">`
         : `<div class="card-poster-fallback">${getInitials(title)}</div>`;
 
     const cardId = isBookmarkView ? `bookmark-card-${index}` : `anime-card-${index}`;
+    const primaryKey = UserDataManager.getDramaKey(item);
+    const docId = UserDataManager.getDramaDocId(item);
+    const coreId = UserDataManager.extractCoreId(item);
+    const safeUrl = (!item.url || /^file:/i.test(item.url.trim()) || item.url.includes('file:///')) ? '' : item.url;
+    const safeCanonicalUrl = (!item.canonicalUrl || /^file:/i.test(item.canonicalUrl.trim()) || item.canonicalUrl.includes('file:///')) ? '' : item.canonicalUrl;
 
     return `
-        <article class="anime-card" id="${cardId}" data-url="${escapeHtml(item.url || '')}" data-title="${title}" data-episodes="${totalEps}" tabindex="0" role="button" aria-label="${title}">
+        <article class="anime-card" id="${cardId}" 
+            data-key="${escapeHtml(primaryKey)}"
+            data-doc-id="${escapeHtml(docId)}"
+            data-core-id="${escapeHtml(coreId)}"
+            data-provider="${escapeHtml(providerName)}"
+            data-url="${escapeHtml(safeUrl)}" 
+            data-canonical-url="${escapeHtml(safeCanonicalUrl)}"
+            data-title="${title}" 
+            data-episodes="${totalEps}" 
+            tabindex="0" role="button" aria-label="${title}">
             <div class="card-poster-wrap">
                 <div class="card-badge-rating">
                     <svg class="rating-star-icon" width="11" height="11" viewBox="0 0 24 24" fill="#fbbf24">
@@ -3043,7 +3795,11 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
                     </svg>
                     <span>${ratingVal}</span>
                 </div>
-                ${watchedBadgeMarkup}
+                <button class="card-bookmark-btn ${isSaved ? 'is-saved' : ''}" type="button" 
+                    title="${isSaved ? 'Remove from My List' : 'Add to My List'}" 
+                    aria-label="${isSaved ? 'Remove from My List' : 'Add to My List'}">
+                    <span class="bookmark-icon">${isSaved ? ICON_BOOKMARK_FILLED_SVG : ICON_BOOKMARK_OUTLINE_SVG}</span>
+                </button>
                 ${posterMarkup}
                 <div class="poster-gradient"></div>
                 ${progressBarMarkup}
@@ -3056,22 +3812,23 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
                         <span class="card-dot-sep">·</span>
                         <span class="card-progress-text">HD Quality</span>
                     </div>
-                    <button class="card-bookmark-btn ${isSaved ? 'is-saved' : ''}" type="button" title="${isSaved ? 'Remove from Saved' : 'Add to Watch Later'}" aria-label="${isSaved ? 'Remove from Saved' : 'Add to Watch Later'}">
-                        <span class="bookmark-icon">${isSaved ? ICON_TRASH_SVG : ICON_PLUS_SVG}</span>
-                        <span class="bookmark-text" style="display:none;">${isSaved ? 'Saved' : 'Save'}</span>
-                    </button>
                 </div>
             </div>
         </article>
     `;
 }
 
-function setQuickViewDescription(text) {
-    if (!elements.quickViewDesc) return;
+function setDetailPageDescription(text) {
     const clean = (text || '').trim();
-    elements.quickViewDesc.textContent = clean || 'Loading drama synopsis...';
-    elements.quickViewDesc.classList.remove('expanded');
-    const toggleBtn = elements.quickViewDescToggle || getEl('quick-view-desc-toggle');
+    if (elements.detailSynopsisText) {
+        elements.detailSynopsisText.textContent = clean || 'Loading drama synopsis...';
+        elements.detailSynopsisText.classList.remove('expanded');
+    }
+    if (elements.quickViewDesc) {
+        elements.quickViewDesc.textContent = clean || 'Loading drama synopsis...';
+        elements.quickViewDesc.classList.remove('expanded');
+    }
+    const toggleBtn = elements.detailSynopsisToggle || elements.quickViewDescToggle;
     if (toggleBtn) {
         toggleBtn.textContent = 'more';
         toggleBtn.setAttribute('aria-expanded', 'false');
@@ -3082,69 +3839,204 @@ function setQuickViewDescription(text) {
         }
     }
 }
+function setQuickViewDescription(text) {
+    return setDetailPageDescription(text);
+}
+
+function updateDetailPagePlayCta(drama) {
+    if (!drama) return;
+    const prog = UserDataManager.getDramaProgress(drama);
+    const watchedList = Array.isArray(prog?.watchedList) ? prog.watchedList : [];
+    const watchedCount = watchedList.length > 0
+        ? watchedList.length
+        : (prog?.lastWatchedEp && prog.lastWatchedEp > 1 ? prog.lastWatchedEp : 0);
+
+    let totalEps = (drama.episodes && drama.episodes > 0)
+        ? drama.episodes
+        : (drama.episodeList ? drama.episodeList.length : (prog?.episodes || 0));
+
+    if (!totalEps) {
+        const bookmark = UserDataManager.findMatchingBookmark(drama);
+        if (bookmark && bookmark.episodes > 0) totalEps = bookmark.episodes;
+    }
+
+    const isCompleted = Boolean(prog?.isCompleted) ||
+        UserDataManager.isProgressCompleted(drama) ||
+        (totalEps > 0 && (watchedList.length >= totalEps || (watchedCount >= totalEps && Math.round((watchedCount / totalEps) * 100) >= 100)));
+
+    let targetEp = 1;
+    let label = 'Episode 1';
+
+    if (isCompleted) {
+        label = 'Rewatch';
+        targetEp = 1;
+    } else if (watchedList.length > 0 || (prog && prog.lastWatchedEp && prog.lastWatchedEp > 1)) {
+        // Watching in progress
+        const maxWatched = watchedList.length > 0 ? Math.max(...watchedList) : 0;
+        if (prog && prog.lastWatchedEp && prog.lastWatchedEp > maxWatched) {
+            targetEp = prog.lastWatchedEp;
+        } else {
+            targetEp = maxWatched + 1;
+        }
+        if (totalEps > 0 && (targetEp > totalEps || maxWatched >= totalEps)) {
+            label = 'Rewatch';
+            targetEp = 1;
+        } else {
+            label = `Continue Ep. ${targetEp}`;
+        }
+    } else {
+        // Brand new with no watch history
+        label = 'Episode 1';
+        targetEp = 1;
+    }
+
+    if (elements.detailPlayCtaText) {
+        elements.detailPlayCtaText.textContent = label;
+    }
+    if (elements.detailPlayCtaIcon) {
+        elements.detailPlayCtaIcon.innerHTML = (label === 'Rewatch') ? ICON_REWATCH_SVG : ICON_PLAY_SVG;
+    }
+    if (elements.detailPlayCta) {
+        elements.detailPlayCta.setAttribute('data-target-ep', String(targetEp));
+        elements.detailPlayCta.setAttribute('data-is-rewatch', label === 'Rewatch' ? 'true' : 'false');
+    }
+}
+
+function updateDetailPageBookmarkCta(drama) {
+    if (!drama) return;
+    const isSaved = UserDataManager.isBookmarked(drama);
+    if (elements.detailBookmarkCta) {
+        elements.detailBookmarkCta.classList.toggle('is-saved', isSaved);
+    }
+    if (elements.detailBookmarkText) {
+        elements.detailBookmarkText.textContent = isSaved ? 'Saved' : 'Add to List';
+    }
+    if (elements.detailBookmarkIcon) {
+        elements.detailBookmarkIcon.innerHTML = isSaved
+            ? `<svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`
+            : `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
+    }
+}
 
 /**
- * Open Quick View Modal and DYNAMICALLY fetch real episodes in ~350ms
- * Only fires a single request when clicked!
+ * Open Dedicated Full-Page Drama Detail View
+ * Loads like a dedicated page with cinematic banner backdrop, meta pills, rating,
+ * progress bar, dynamic Play Episode CTA, and 2-column episode cards.
  */
-async function openQuickView(item, cardEl = null) {
+async function openDramaDetailPage(item, cardEl = null) {
+    if (!item) return;
     AppState.selectedDrama = item;
 
-    if (elements.quickViewTitle) elements.quickViewTitle.textContent = item.title;
-    setQuickViewDescription(item.description || 'Loading drama synopsis...');
+    // Immediately resolve total episode count from card / progress / bookmark / DOM to avoid any delay
+    if (!item.episodes || item.episodes <= 0) {
+        if (cardEl) {
+            const cEp = parseInt(cardEl.getAttribute('data-episodes'), 10);
+            if (cEp > 0) item.episodes = cEp;
+        }
+        if (!item.episodes || item.episodes <= 0) {
+            const prog = UserDataManager.getDramaProgress(item);
+            if (prog && prog.episodes > 0) item.episodes = prog.episodes;
+        }
+        if (!item.episodes || item.episodes <= 0) {
+            const bookmark = UserDataManager.findMatchingBookmark(item);
+            if (bookmark && bookmark.episodes > 0) item.episodes = bookmark.episodes;
+        }
+        if (!item.episodes || item.episodes <= 0) {
+            const domCard = document.querySelector(`.anime-card[data-key="${UserDataManager.getDramaKey(item)}"]`);
+            if (domCard) {
+                const cEp = parseInt(domCard.getAttribute('data-episodes'), 10);
+                if (cEp > 0) item.episodes = cEp;
+            }
+        }
+    }
 
-    // Poster
-    if (elements.quickViewPoster) {
-        elements.quickViewPoster.src = formatPosterUrl(item.poster || '');
-        elements.quickViewPoster.alt = item.title;
-        elements.quickViewPoster.onerror = () => {
-            elements.quickViewPoster.src = getPlaceholderSvgDataUri(item.title);
+    // Transition view to detail page mode
+    setAppMode('detail');
+
+    const posterUrl = formatPosterUrl(item.poster || '');
+
+    // 1. Ambient Hero Banner Backdrop
+    if (elements.detailHeroBackdrop) {
+        elements.detailHeroBackdrop.style.backgroundImage = posterUrl ? `url("${posterUrl}")` : 'none';
+    }
+
+    // 2. Poster Card
+    if (elements.detailPoster) {
+        elements.detailPoster.src = posterUrl || getPlaceholderSvgDataUri(item.title);
+        elements.detailPoster.alt = item.title || 'Drama Poster';
+        elements.detailPoster.onerror = () => {
+            elements.detailPoster.src = getPlaceholderSvgDataUri(item.title);
         };
     }
 
-    // Metadata badges
-    const episodeTotalText = getEpisodeTotalText(item);
+    // 3. Main Titles
+    if (elements.detailMainTitle) elements.detailMainTitle.textContent = item.title || 'Drama Title';
+    if (elements.detailNavTitle) elements.detailNavTitle.textContent = item.title || 'Drama Details';
+
+    // 4. Provider & Status Pills
     const providerName = getItemProviderName(item);
-    if (elements.quickViewMeta) {
-        const tagsHtml = (item.tags || []).map(t => `<span class="detail-badge">#${escapeHtml(t)}</span>`).join('');
-        elements.quickViewMeta.innerHTML = `
-            <span class="detail-badge" id="quick-view-provider-badge" style="background:linear-gradient(135deg, #ff2442, #e50914); color:#fff; border-color:transparent; font-weight:700;">
-                ${escapeHtml(providerName)}
-            </span>
-            ${tagsHtml}
-        `;
+    if (elements.detailProviderPill) elements.detailProviderPill.textContent = providerName;
+
+    // 5. Rating Value
+    const ratingVal = getDramaRating(item.title || '');
+    if (elements.detailRatingVal) elements.detailRatingVal.textContent = ratingVal;
+
+    // 6. Episode Count Meta
+    const epTotalNum = item.episodes || (item.episodeList ? item.episodeList.length : 0);
+    if (elements.detailEpCount) {
+        elements.detailEpCount.textContent = epTotalNum > 0 ? `${epTotalNum} Episodes` : 'Episodes';
+    }
+    if (elements.detailTabEpisodesCount) {
+        elements.detailTabEpisodesCount.textContent = epTotalNum > 0 ? String(epTotalNum) : '0';
     }
 
-    if (elements.quickViewEpisodesCount) {
-        const epTotalNum = item.episodes || (item.episodeList ? item.episodeList.length : 0);
-        elements.quickViewEpisodesCount.textContent = epTotalNum > 0 ? `${epTotalNum} Episodes` : 'Episodes';
+    // 7. Genre Badges
+    if (elements.detailGenresRow) {
+        const tags = (item.tags && item.tags.length > 0) ? item.tags : ['Trending', 'Drama', 'Romance'];
+        elements.detailGenresRow.innerHTML = tags.map(t => `<span class="detail-genre-pill">#${escapeHtml(t)}</span>`).join('');
     }
 
-    openModal(elements.quickViewModal);
+    // 8. Synopsis
+    setDetailPageDescription(item.description || 'Loading drama synopsis...');
 
-    // If episodes are ALREADY cached / parsed, render instantly in 0ms!
+    // 9. Dynamic Play Episode & Bookmark CTAs
+    updateDetailPagePlayCta(item);
+    updateDetailPageBookmarkCta(item);
+
+    // 10. Clear filter input
+    if (elements.detailEpisodesSearchInput) {
+        elements.detailEpisodesSearchInput.value = '';
+    }
+
+    // 11. Push hash state for browser back-button navigation
+    if (window.location.hash !== '#detail') {
+        const dramaSlug = item.id || (item.title ? item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'drama');
+        const searchParams = new URLSearchParams(window.location.search);
+        searchParams.set('drama', dramaSlug);
+        const newUrl = `${window.location.pathname}?${searchParams.toString()}#detail`;
+        window.history.pushState({ mode: 'detail', dramaId: dramaSlug }, '', newUrl);
+    }
+
+    // 12. If episodes already cached / parsed, render instantly in 0ms!
     if (item.episodeList && item.episodeList.length > 0) {
         renderEpisodesList(item.episodeList, item.episodes || item.episodeList.length);
         return;
     }
 
-    // Otherwise, fetch the single drama detail HTML page (~350ms)
-    if (elements.quickViewEpisodesTabs) {
-        elements.quickViewEpisodesTabs.innerHTML = '';
-        elements.quickViewEpisodesTabs.style.display = 'none';
+    // 13. Otherwise, fetch detail HTML page
+    if (elements.detailEpisodesRanges) {
+        elements.detailEpisodesRanges.innerHTML = '';
+        elements.detailEpisodesRanges.style.display = 'none';
     }
-    if (elements.quickViewEpisodesGrid) elements.quickViewEpisodesGrid.innerHTML = '';
-    if (elements.quickViewEpisodesLoading) elements.quickViewEpisodesLoading.style.display = 'flex';
-    if (elements.quickViewEpisodesCount) elements.quickViewEpisodesCount.textContent = 'Loading...';
+    if (elements.detailEpisodesGrid) elements.detailEpisodesGrid.innerHTML = '';
+    if (elements.detailEpisodesLoading) elements.detailEpisodesLoading.style.display = 'flex';
 
     try {
         const { html } = await fetchFastHtml(item.url);
-        
-        // Parse episodes from detail page HTML
         const detailData = DramaParser.parseEpisodesFromDetailPage(html, 'https://narto-drama.com');
-        
+
         if (detailData.description) {
-            setQuickViewDescription(detailData.description);
+            setDetailPageDescription(detailData.description);
             item.description = detailData.description;
         }
 
@@ -3152,14 +4044,23 @@ async function openQuickView(item, cardEl = null) {
             item.url = detailData.canonicalUrl;
         }
 
+        if (detailData.tags && detailData.tags.length > 0) {
+            item.tags = detailData.tags;
+            if (elements.detailGenresRow) {
+                elements.detailGenresRow.innerHTML = detailData.tags.map(t => `<span class="detail-genre-pill">#${escapeHtml(t)}</span>`).join('');
+            }
+        }
+
         if (detailData.episodeList && detailData.episodeList.length > 0) {
             item.episodeList = detailData.episodeList;
             item.episodes = detailData.episodeCount || detailData.episodeList.length;
             renderEpisodesList(item.episodeList, item.episodes);
-            
-            // Update total badge in modal and card
-            if (elements.quickViewEpisodesCount) {
-                elements.quickViewEpisodesCount.textContent = `${item.episodes} Episodes`;
+
+            if (elements.detailEpCount) {
+                elements.detailEpCount.textContent = `${item.episodes} Episodes`;
+            }
+            if (elements.detailTabEpisodesCount) {
+                elements.detailTabEpisodesCount.textContent = String(item.episodes);
             }
             if (cardEl) {
                 const epBadge = cardEl.querySelector('.card-badge-top-left');
@@ -3175,7 +4076,7 @@ async function openQuickView(item, cardEl = null) {
     }
 
     // Graceful fallback: Generate episode links from URL pattern
-    if (elements.quickViewEpisodesLoading) elements.quickViewEpisodesLoading.style.display = 'none';
+    if (elements.detailEpisodesLoading) elements.detailEpisodesLoading.style.display = 'none';
     const totalEps = item.episodes || 60;
     let cleanBase = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
     if (cleanBase.includes('/search/import')) {
@@ -3192,17 +4093,154 @@ async function openQuickView(item, cardEl = null) {
     renderEpisodesList(fallbackList, totalEps);
 }
 
+// Backwards-compatible alias
+const openQuickView = openDramaDetailPage;
+
+/**
+ * Setup press-and-hold (long press) and click interactions on episode buttons.
+ * - Tap/Click: plays the episode.
+ * - Press & hold (~420ms): immediately marks episode as watched (or toggles watched state),
+ *   giving tactile scale animation, haptic vibration, and toast feedback without launching playback.
+ * - Right-click (contextmenu): also triggers toggle watched on desktop.
+ */
+function setupEpisodeButtonInteraction(btn, { onPlay, onToggleWatched }) {
+    let pressTimer = null;
+    let isLongPress = false;
+    let startX = 0;
+    let startY = 0;
+    const HOLD_DURATION = 420;
+
+    const startPress = (clientX, clientY) => {
+        isLongPress = false;
+        startX = clientX;
+        startY = clientY;
+        btn.classList.add('is-pressing');
+        if (pressTimer) clearTimeout(pressTimer);
+        pressTimer = setTimeout(() => {
+            isLongPress = true;
+            btn.classList.remove('is-pressing');
+            btn.classList.add('pulse-watched');
+            setTimeout(() => btn.classList.remove('pulse-watched'), 320);
+            if (navigator.vibrate) {
+                try { navigator.vibrate(50); } catch (_) {}
+            }
+            onToggleWatched();
+        }, HOLD_DURATION);
+    };
+
+    const cancelPress = () => {
+        btn.classList.remove('is-pressing');
+        if (pressTimer) {
+            clearTimeout(pressTimer);
+            pressTimer = null;
+        }
+    };
+
+    // Touch events for mobile
+    btn.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length === 1) {
+            startPress(e.touches[0].clientX, e.touches[0].clientY);
+        }
+    }, { passive: true });
+
+    btn.addEventListener('touchmove', (e) => {
+        if (pressTimer && e.touches && e.touches.length === 1) {
+            const diffX = Math.abs(e.touches[0].clientX - startX);
+            const diffY = Math.abs(e.touches[0].clientY - startY);
+            if (diffX > 10 || diffY > 10) {
+                cancelPress();
+            }
+        }
+    }, { passive: true });
+
+    btn.addEventListener('touchend', () => {
+        cancelPress();
+    });
+
+    btn.addEventListener('touchcancel', () => {
+        cancelPress();
+    });
+
+    // Mouse pointer events for desktop hold
+    btn.addEventListener('mousedown', (e) => {
+        if (e.button === 0) {
+            startPress(e.clientX, e.clientY);
+        }
+    });
+
+    btn.addEventListener('mousemove', (e) => {
+        if (pressTimer) {
+            const diffX = Math.abs(e.clientX - startX);
+            const diffY = Math.abs(e.clientY - startY);
+            if (diffX > 10 || diffY > 10) {
+                cancelPress();
+            }
+        }
+    });
+
+    btn.addEventListener('mouseup', () => {
+        cancelPress();
+    });
+
+    btn.addEventListener('mouseleave', () => {
+        cancelPress();
+    });
+
+    // Right-click contextmenu for desktop
+    btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        cancelPress();
+        onToggleWatched();
+    });
+
+    // Regular click (runs onPlay only if not a long press)
+    btn.addEventListener('click', (e) => {
+        if (isLongPress) {
+            e.preventDefault();
+            e.stopPropagation();
+            isLongPress = false;
+            return;
+        }
+        onPlay();
+    });
+}
+
 function renderEpisodesList(episodeList, count) {
+    if (elements.detailEpisodesLoading) elements.detailEpisodesLoading.style.display = 'none';
     if (elements.quickViewEpisodesLoading) elements.quickViewEpisodesLoading.style.display = 'none';
-    const totalCount = count || episodeList.length;
+
+    const drama = AppState.selectedDrama;
+    const totalCount = count || (episodeList ? episodeList.length : 0);
+
+    if (drama && totalCount > 0) {
+        drama.episodes = totalCount;
+        UserDataManager.saveDramaEpisodes(drama, totalCount);
+    }
+
+    if (elements.detailEpCount) elements.detailEpCount.textContent = `${totalCount} Episodes`;
+    if (elements.detailTabEpisodesCount) elements.detailTabEpisodesCount.textContent = String(totalCount);
     if (elements.quickViewEpisodesCount) elements.quickViewEpisodesCount.textContent = `${totalCount} Episodes`;
 
-    const GROUP_SIZE = 20;
+    const GROUP_SIZE = 24;
+    const EYE_ICON_SVG = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 
-    function updateQuickViewProgress() {
-        const prog = UserDataManager.getDramaProgress(AppState.selectedDrama?.url);
-        const watchedCount = (prog.watchedList || []).length;
+    function updateDetailPageProgress() {
+        if (!AppState.selectedDrama) return;
+        const prog = UserDataManager.getDramaProgress(AppState.selectedDrama);
+        const watchedList = Array.isArray(prog.watchedList) ? prog.watchedList : [];
+        const watchedCount = watchedList.length;
         const pct = totalCount > 0 ? Math.min(100, Math.round((watchedCount / totalCount) * 100)) : 0;
+
+        if (elements.detailProgressStats) {
+            elements.detailProgressStats.textContent = `${watchedCount} / ${totalCount} watched (${pct}%)`;
+        }
+        if (elements.detailProgressBarFill) {
+            elements.detailProgressBarFill.style.width = `${pct}%`;
+        }
+        if (elements.detailProgressWrap) {
+            elements.detailProgressWrap.style.display = (watchedCount > 0 || prog.lastWatchedEp > 0) ? 'block' : 'none';
+        }
         if (elements.quickViewProgressText) {
             elements.quickViewProgressText.textContent = `${watchedCount} / ${totalCount} watched (${pct}%)`;
         }
@@ -3210,18 +4248,19 @@ function renderEpisodesList(episodeList, count) {
             elements.quickViewProgressBarFill.style.width = `${pct}%`;
         }
         if (elements.quickViewProgressBarWrap) {
-            elements.quickViewProgressBarWrap.style.display = totalCount > 0 ? 'block' : 'none';
+            elements.quickViewProgressBarWrap.style.display = (watchedCount > 0 || prog.lastWatchedEp > 0) ? 'block' : 'none';
         }
+        updateDetailPagePlayCta(AppState.selectedDrama);
     }
 
-    updateQuickViewProgress();
+    updateDetailPageProgress();
 
     // Auto-detect initial active group (if user watched an episode in this drama)
     let activeGroupIndex = 0;
-    const prog = UserDataManager.getDramaProgress(AppState.selectedDrama?.url);
+    const prog = UserDataManager.getDramaProgress(AppState.selectedDrama);
     if (prog && prog.lastWatchedEp) {
         const epIdx = episodeList.findIndex(e => {
-            const n = typeof e.number === 'number' ? e.number : parseInt((e.number || '').replace(/\D+/g, ''), 10);
+            const n = typeof e.number === 'number' ? e.number : parseInt(String(e.number || '').replace(/\D+/g, ''), 10);
             return n === prog.lastWatchedEp;
         });
         if (epIdx >= 0) {
@@ -3229,99 +4268,247 @@ function renderEpisodesList(episodeList, count) {
         }
     }
 
-    function renderGroup(groupIndex) {
-        activeGroupIndex = groupIndex;
-        if (elements.quickViewEpisodesTabs) {
-            elements.quickViewEpisodesTabs.querySelectorAll('.ep-range-tab').forEach((tab, idx) => {
-                tab.classList.toggle('active', idx === groupIndex);
-            });
+    let filterText = (elements.detailEpisodesSearchInput ? elements.detailEpisodesSearchInput.value : '').trim().toLowerCase();
+
+    function closeRangeMenu() {
+        closeDetailRangeMenu();
+    }
+
+    function toggleRangeMenu() {
+        if (!elements.detailRangeMenu) return;
+        const isOpen = elements.detailRangeMenu.style.display !== 'none';
+        if (isOpen) {
+            closeRangeMenu();
+        } else {
+            elements.detailRangeMenu.style.display = 'flex';
+            if (elements.detailRangeTrigger) {
+                elements.detailRangeTrigger.classList.add('open');
+                elements.detailRangeTrigger.setAttribute('aria-expanded', 'true');
+            }
+        }
+    }
+
+    function renderRangeDropdown() {
+        const wrapEl = elements.detailRangeSelectWrap;
+        const triggerEl = elements.detailRangeTrigger;
+        const triggerTextEl = elements.detailRangeTriggerText;
+        const menuEl = elements.detailRangeMenu;
+        const fallbackContainer = elements.detailEpisodesRanges || elements.quickViewEpisodesTabs;
+
+        const groupsCount = Math.ceil(episodeList.length / GROUP_SIZE);
+
+        if (groupsCount <= 1) {
+            if (wrapEl) wrapEl.style.display = 'none';
+            if (fallbackContainer) fallbackContainer.style.display = 'none';
+            closeRangeMenu();
+            return;
         }
 
-        const startIdx = groupIndex * GROUP_SIZE;
-        const endIdx = Math.min(startIdx + GROUP_SIZE, episodeList.length);
-        const slice = episodeList.slice(startIdx, endIdx);
+        if (activeGroupIndex < 0 || activeGroupIndex >= groupsCount) {
+            activeGroupIndex = 0;
+        }
 
-        const currentProg = UserDataManager.getDramaProgress(AppState.selectedDrama?.url);
+        if (wrapEl && triggerEl && menuEl) {
+            if (fallbackContainer) fallbackContainer.style.display = 'none';
+            const currentStart = activeGroupIndex * GROUP_SIZE + 1;
+            const currentEnd = Math.min((activeGroupIndex + 1) * GROUP_SIZE, episodeList.length);
+            if (triggerTextEl) {
+                triggerTextEl.textContent = `${currentStart} - ${currentEnd}`;
+            }
+
+            wrapEl.style.display = 'inline-flex';
+
+            const CHECKMARK_SVG = `<svg class="detail-range-item-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+            const itemsHtml = Array.from({ length: groupsCount }, (_, i) => {
+                const start = i * GROUP_SIZE + 1;
+                const end = Math.min((i + 1) * GROUP_SIZE, episodeList.length);
+                const isActive = i === activeGroupIndex;
+                return `
+                    <button class="detail-range-item${isActive ? ' active' : ''}" type="button" data-group-index="${i}" role="option" aria-selected="${isActive}">
+                        <span class="detail-range-item-text">${start} - ${end}</span>
+                        ${isActive ? CHECKMARK_SVG : ''}
+                    </button>
+                `;
+            }).join('');
+
+            menuEl.innerHTML = itemsHtml;
+
+            menuEl.querySelectorAll('.detail-range-item').forEach(item => {
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    const gIdx = parseInt(item.getAttribute('data-group-index'), 10) || 0;
+                    activeGroupIndex = gIdx;
+                    closeRangeMenu();
+                    renderActiveEpisodes();
+                };
+            });
+
+            triggerEl.onclick = (e) => {
+                e.stopPropagation();
+                toggleRangeMenu();
+            };
+        } else if (fallbackContainer) {
+            const tabsHtml = Array.from({ length: groupsCount }, (_, i) => {
+                const start = i * GROUP_SIZE + 1;
+                const end = Math.min((i + 1) * GROUP_SIZE, episodeList.length);
+                const isActive = i === activeGroupIndex;
+                return `<button class="ep-range-tab${isActive ? ' active' : ''}" type="button" data-group-index="${i}">${start} - ${end}</button>`;
+            }).join('');
+
+            fallbackContainer.innerHTML = tabsHtml;
+            fallbackContainer.style.display = 'flex';
+            fallbackContainer.querySelectorAll('.ep-range-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    const gIdx = parseInt(tab.getAttribute('data-group-index'), 10) || 0;
+                    activeGroupIndex = gIdx;
+                    renderActiveEpisodes();
+                });
+            });
+        }
+    }
+
+    function renderActiveEpisodes() {
+        const currentProg = UserDataManager.getDramaProgress(AppState.selectedDrama);
         const isCurrentPlayingDrama = Boolean(PlayerState.currentDrama && AppState.selectedDrama && (UserDataManager.getDramaKey(PlayerState.currentDrama) === UserDataManager.getDramaKey(AppState.selectedDrama)));
 
-        const html = slice.map((ep, sliceIdx) => {
-            const globalIdx = startIdx + sliceIdx;
-            const epNum = typeof ep.number === 'number' ? ep.number : (globalIdx + 1);
-            const epLabel = typeof ep.number === 'string' && ep.number.toUpperCase().startsWith('EP') ? ep.number : `EP ${epNum}`;
+        let displayList = episodeList;
+        const isFiltered = Boolean(filterText);
+
+        if (isFiltered) {
+            displayList = episodeList.filter((ep, idx) => {
+                const epNum = typeof ep.number === 'number' ? ep.number : (idx + 1);
+                const numStr = String(epNum);
+                const titleStr = (ep.title || `Episode ${epNum}`).toLowerCase();
+                return numStr.includes(filterText) || titleStr.includes(filterText);
+            });
+            closeRangeMenu();
+            if (elements.detailRangeSelectWrap) {
+                elements.detailRangeSelectWrap.style.display = 'none';
+            }
+            if (elements.detailEpisodesRanges) {
+                elements.detailEpisodesRanges.style.display = 'none';
+            }
+            if (elements.quickViewEpisodesTabs) {
+                elements.quickViewEpisodesTabs.style.display = 'none';
+            }
+        } else {
+            // Group range slicing (24 episodes per page - exactly 6 rows in 4-column grid)
+            if (episodeList.length > GROUP_SIZE) {
+                const startIdx = activeGroupIndex * GROUP_SIZE;
+                const endIdx = Math.min(startIdx + GROUP_SIZE, episodeList.length);
+                displayList = episodeList.slice(startIdx, endIdx);
+                renderRangeDropdown();
+            } else {
+                displayList = episodeList;
+                closeRangeMenu();
+                if (elements.detailRangeSelectWrap) {
+                    elements.detailRangeSelectWrap.style.display = 'none';
+                }
+                if (elements.detailEpisodesRanges) {
+                    elements.detailEpisodesRanges.style.display = 'none';
+                }
+                if (elements.quickViewEpisodesTabs) {
+                    elements.quickViewEpisodesTabs.style.display = 'none';
+                }
+            }
+        }
+
+        const gridEl = elements.detailEpisodesGrid || elements.quickViewEpisodesGrid;
+        if (!gridEl) return;
+
+        if (displayList.length === 0) {
+            gridEl.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 36px 16px; text-align: center; color: var(--text-muted); font-size: 14px;">
+                    No episodes found matching "${escapeHtml(filterText)}"
+                </div>
+            `;
+            return;
+        }
+
+        const html = displayList.map((ep, sliceIdx) => {
+            const globalIdx = isFiltered ? episodeList.indexOf(ep) : (activeGroupIndex * GROUP_SIZE + sliceIdx);
+            const epNum = typeof ep.number === 'number' ? ep.number : (globalIdx >= 0 ? globalIdx + 1 : sliceIdx + 1);
+            const epTitle = ep.title || `Episode ${epNum}`;
             const isWatched = (currentProg.watchedList || []).includes(epNum);
             const isActive = isCurrentPlayingDrama && PlayerState.currentEpisodeNumber === epNum;
 
-            const classes = ['episode-btn'];
+            const classes = ['detail-ep-card'];
             if (isActive) classes.push('active');
             if (isWatched) classes.push('watched');
 
-            const title = isActive ? `Episode ${epNum} (Playing)` : (isWatched ? `Episode ${epNum} (Watched)` : `Episode ${epNum}`);
-            const icon = isActive ? ' ▶' : (isWatched ? ' ✓' : '');
+            const title = isActive
+                ? `Episode ${epNum} (Playing)`
+                : (isWatched ? `Episode ${epNum} (Watched — Press and hold to toggle)` : `Episode ${epNum} (Press and hold to mark watched)`);
 
-            return `<button class="${classes.join(' ')}" type="button" data-ep-index="${globalIdx}" data-ep-num="${epNum}" data-ep-url="${escapeHtml(ep.url)}" title="${title}">${escapeHtml(epLabel)}${icon}</button>`;
+            const statusBadgeHtml = isActive
+                ? `<span class="detail-ep-playing-badge">▶ Playing</span>`
+                : (isWatched ? `<span class="detail-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
+
+            return `
+                <button class="${classes.join(' ')}" type="button" data-ep-index="${globalIdx}" data-ep-num="${epNum}" data-ep-url="${escapeHtml(ep.url || '')}" title="${escapeHtml(title)}">
+                    <div class="detail-ep-num-box">${epNum}</div>
+                    <div class="detail-ep-title">${escapeHtml(epTitle)}</div>
+                    <div class="detail-ep-status-badge">${statusBadgeHtml}</div>
+                </button>
+            `;
         }).join('');
 
-        if (elements.quickViewEpisodesGrid) {
-            elements.quickViewEpisodesGrid.innerHTML = html;
-            // Attach click listeners to launch in-app player for that episode
-            elements.quickViewEpisodesGrid.querySelectorAll('.episode-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const epNum = parseInt(btn.getAttribute('data-ep-num'), 10) || 1;
-                    const epUrl = btn.getAttribute('data-ep-url') || '';
+        gridEl.innerHTML = html;
+
+        // Attach press-and-hold and click listeners to episode cards
+        gridEl.querySelectorAll('.detail-ep-card').forEach(btn => {
+            const epNum = parseInt(btn.getAttribute('data-ep-num'), 10) || 1;
+            const epUrl = btn.getAttribute('data-ep-url') || '';
+
+            setupEpisodeButtonInteraction(btn, {
+                onPlay: () => {
                     if (AppState.selectedDrama) {
                         playEpisode(AppState.selectedDrama, epNum, epUrl);
                     }
-                });
-
-                // Right click or long press allows toggling watched state manually
-                btn.addEventListener('contextmenu', (e) => {
-                    e.preventDefault();
+                },
+                onToggleWatched: () => {
                     if (!AppState.selectedDrama) return;
-                    const epNum = parseInt(btn.getAttribute('data-ep-num'), 10) || 1;
                     const nowWatched = UserDataManager.toggleEpisodeWatched(AppState.selectedDrama, epNum);
                     btn.classList.toggle('watched', nowWatched);
-                    const isCurrentlyActive = btn.classList.contains('active');
-                    btn.textContent = `EP ${epNum}${isCurrentlyActive ? ' ▶' : (nowWatched ? ' ✓' : '')}`;
-                    updateQuickViewProgress();
-                    showToast(nowWatched ? `Marked EP ${epNum} as watched` : `Marked EP ${epNum} as unwatched`);
-                });
+                    const statusBadge = btn.querySelector('.detail-ep-status-badge');
+                    if (statusBadge) {
+                        const isCurrentlyActive = btn.classList.contains('active');
+                        statusBadge.innerHTML = isCurrentlyActive
+                            ? `<span class="detail-ep-playing-badge">▶ Playing</span>`
+                            : (nowWatched ? `<span class="detail-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
+                    }
+                    updateDetailPageProgress();
+                    showToast(nowWatched ? `Marked EP ${epNum} as watched` : `Marked EP ${epNum} as unwatched`, nowWatched ? 'success' : 'info');
+                }
             });
-        }
+        });
     }
 
-    // Segment tabs if more than GROUP_SIZE episodes
-    if (episodeList.length > GROUP_SIZE) {
-        const groupsCount = Math.ceil(episodeList.length / GROUP_SIZE);
-        const tabsHtml = Array.from({ length: groupsCount }, (_, i) => {
-            const start = i * GROUP_SIZE + 1;
-            const end = Math.min((i + 1) * GROUP_SIZE, episodeList.length);
-            const isActive = i === activeGroupIndex;
-            return `<button class="ep-range-tab${isActive ? ' active' : ''}" type="button" data-group-index="${i}">${start} - ${end}</button>`;
-        }).join('');
+    // Connect real-time episode search / filter
+    if (elements.detailEpisodesSearchInput) {
+        elements.detailEpisodesSearchInput.oninput = (e) => {
+            filterText = (e.target.value || '').trim().toLowerCase();
+            renderActiveEpisodes();
+        };
+    }
 
-        if (elements.quickViewEpisodesTabs) {
-            elements.quickViewEpisodesTabs.innerHTML = tabsHtml;
-            elements.quickViewEpisodesTabs.style.display = 'flex';
-            elements.quickViewEpisodesTabs.querySelectorAll('.ep-range-tab').forEach(tab => {
-                tab.addEventListener('click', () => {
-                    const gIdx = parseInt(tab.getAttribute('data-group-index'), 10) || 0;
-                    renderGroup(gIdx);
-                });
-            });
-        }
+    renderActiveEpisodes();
+}
+
+function closeDramaDetailPage() {
+    closeDetailRangeMenu();
+    if (AppState.mode !== 'detail') return;
+    if (window.location.hash === '#detail') {
+        window.history.back();
     } else {
-        if (elements.quickViewEpisodesTabs) {
-            elements.quickViewEpisodesTabs.innerHTML = '';
-            elements.quickViewEpisodesTabs.style.display = 'none';
-        }
+        const prevMode = AppState.lastMainMode || (window.location.hash === '#mylist' ? 'bookmarks' : 'home');
+        setAppMode(prevMode);
     }
-
-    renderGroup(activeGroupIndex);
 }
 
-function closeQuickView() {
-    closeModal(elements.quickViewModal);
-}
+// Backwards-compatible alias
+const closeQuickView = closeDramaDetailPage;
 
 /**
  * ==========================================================================
@@ -3356,7 +4543,7 @@ function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
 /**
  * Play an episode in our in-app TikTok-style streaming player
  */
-async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh = false) {
+async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh = false, isSeamless = false) {
     if (!drama) return;
 
     const epNum = parseInt(episodeNumber, 10) || 1;
@@ -3397,10 +4584,13 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
         elements.reelVideoViewport.classList.remove('is-portrait');
     }
 
-    // Initialize Like State
+    // Initialize Like State & Bookmark State
     initLikeStateForDrama(drama);
+    updatePlayerBookmarkButton(drama);
 
-    showPlayerBuffering(true);
+    if (!isSeamless) {
+        showPlayerBuffering(true);
+    }
 
     // Update Next / Prev buttons
     updatePlayerNavButtons();
@@ -3452,7 +4642,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                     showToast('This episode is not available at this moment');
                     return;
                 }
-                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp);
+                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp, isSeamless);
                 return;
             }
         }
@@ -3480,7 +4670,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             }
 
             if (targetUrl) {
-                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp);
+                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp, isSeamless);
                 return;
             }
         } else if (streamData.streamUrl) {
@@ -3489,7 +4679,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                 showToast('This episode is not available at this moment');
                 return;
             }
-            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp);
+            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless);
             return;
         }
 
@@ -3517,13 +4707,19 @@ function createReelHlsLoaderClass() {
 
     return class ReelHlsLoader extends Hls.DefaultConfig.loader {
         load(context, config, callbacks) {
+            const rawUrl = (context && context.url) || '';
+            const isLocalOrFile = rawUrl.startsWith('local:') || 
+                                  rawUrl.startsWith('file:') || 
+                                  rawUrl.includes('file:///') || 
+                                  rawUrl.includes('offline-key') || 
+                                  rawUrl.startsWith('data:application/octet-stream;base64,');
+
             // 1. Intercept decryption key requests (context.type === 'key')
             if (context.type === 'key') {
-                const url = context.url || '';
-                if (url.startsWith('local:') || url.startsWith('file:') || url.includes('offline-key') || url.startsWith('data:application/octet-stream;base64,')) {
+                if (isLocalOrFile) {
                     let keyBase64 = PlayerState.currentStreamKey;
-                    if (url.startsWith('data:application/octet-stream;base64,')) {
-                        keyBase64 = url.split(',')[1];
+                    if (rawUrl.startsWith('data:application/octet-stream;base64,')) {
+                        keyBase64 = rawUrl.split(',')[1];
                     }
                     if (keyBase64) {
                         try {
@@ -3542,16 +4738,37 @@ function createReelHlsLoaderClass() {
                             console.warn('[ReelHlsLoader] Failed to decode base64 key:', e);
                         }
                     }
+
+                    // Fallback for file/local key when no valid key found:
+                    // Return dummy 16-byte key buffer so Hls.js never calls super.load() on file:///
+                    callbacks.onSuccess({
+                        data: new Uint8Array(16).buffer
+                    }, {
+                        url: context.url
+                    }, context);
+                    return;
                 }
+            }
+
+            // Guard against any network request attempting to fetch file:/// or local:
+            if (rawUrl.startsWith('file:') || rawUrl.includes('file:///')) {
+                console.warn('[ReelHlsLoader] Suppressing disallowed file URI request:', rawUrl);
+                if (callbacks && callbacks.onError) {
+                    callbacks.onError({ code: 403, text: 'File URI scheme not permitted' }, context);
+                }
+                return;
             }
 
             // 2. Intercept manifest & level playlists to rewrite local: or file: key URIs
             if (context.type === 'manifest' || context.type === 'level') {
                 const origSuccess = callbacks.onSuccess;
                 callbacks.onSuccess = function(response, stats, ctx, networkDetails) {
-                    if (response && typeof response.data === 'string' && PlayerState.currentStreamKey) {
-                        const dataUri = `data:application/octet-stream;base64,${PlayerState.currentStreamKey}`;
-                        response.data = response.data.replace(/URI=["'](?:local|file):\/\/[^"']+["']/g, `URI="${dataUri}"`);
+                    if (response && typeof response.data === 'string') {
+                        const fallbackKey = 'AAAAAAAAAAAAAAAAAAAAAA=='; // 16 null bytes base64
+                        const keyToUse = PlayerState.currentStreamKey || fallbackKey;
+                        const dataUri = `data:application/octet-stream;base64,${keyToUse}`;
+                        // Rewrite any local: or file: key URI in the playlist to the in-memory data URI
+                        response.data = response.data.replace(/URI=["'](?:local|file):(?:\/\/+|\/|)[^"']*["']/gi, `URI="${dataUri}"`);
                     }
                     origSuccess.call(this, response, stats, ctx, networkDetails);
                 };
@@ -3649,6 +4866,13 @@ function toggleQualityMenu(forceState) {
     const shouldOpen = forceState !== undefined ? forceState : !isCurrentlyOpen;
 
     if (shouldOpen) {
+        if (elements.reelPlayerContainer) {
+            elements.reelPlayerContainer.classList.remove('controls-hidden');
+        }
+        if (PlayerState.controlsHideTimer) {
+            clearTimeout(PlayerState.controlsHideTimer);
+            PlayerState.controlsHideTimer = null;
+        }
         renderQualityMenu();
         elements.playerQualityWrap.classList.add('open');
         elements.playerQualityMenu.style.display = 'flex';
@@ -3661,6 +4885,7 @@ function toggleQualityMenu(forceState) {
         if (elements.playerQualityBtn) {
             elements.playerQualityBtn.setAttribute('aria-expanded', 'false');
         }
+        resetPlayerControlsTimer();
     }
 }
 
@@ -3792,9 +5017,9 @@ function attemptAutoplay(videoEl) {
 /**
  * Load and play a stream URL (.m3u8 or .mp4) in HTML5 video using adaptive Hls.js
  */
-function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null) {
-    if (!streamUrl) {
-        showPlayerError('No video stream URL found for this episode.');
+function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null, isSeamless = false) {
+    if (!streamUrl || typeof streamUrl !== 'string' || /^file:/i.test(streamUrl.trim()) || streamUrl.includes('file:///')) {
+        showPlayerError('No valid video stream URL found for this episode.');
         return;
     }
 
@@ -3839,6 +5064,10 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     const videoEl = elements.playerVideoElement;
     if (!videoEl) return;
 
+    // Reset scrub bar displays for new stream
+    if (elements.playerScrubProgress) elements.playerScrubProgress.style.width = '0%';
+    if (elements.playerScrubBuffered) elements.playerScrubBuffered.style.width = '0%';
+
     // Reset previous HLS instance
     if (PlayerState.hls) {
         PlayerState.hls.destroy();
@@ -3863,7 +5092,9 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     }
 
     // Smooth non-blocking buffering indicator
-    showPlayerBuffering(true);
+    if (!isSeamless) {
+        showPlayerBuffering(true);
+    }
     if (elements.playerErrorOverlay) {
         elements.playerErrorOverlay.style.display = 'none';
     }
@@ -3997,6 +5228,10 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
  * Native video playback with format recovery and 410 detection
  */
 function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
+    if (!streamUrl || typeof streamUrl !== 'string' || /^file:/i.test(streamUrl.trim()) || streamUrl.includes('file:///')) {
+        showPlayerError('Invalid or blocked video stream.');
+        return;
+    }
     videoEl.onerror = async () => {
         const err = videoEl.error;
 
@@ -4109,28 +5344,20 @@ function setupVideoPlayerEvents() {
                 elements.playerTimeTotal.textContent = formatTime(videoEl.duration);
             }
 
+            // Keep buffered progress updated continuously
+            if (videoEl.buffered.length > 0 && elements.playerScrubBuffered) {
+                const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
+                const bufPct = Math.min(100, (bufferedEnd / videoEl.duration) * 100);
+                elements.playerScrubBuffered.style.width = `${bufPct}%`;
+            }
+
             // Only mark episode as completed once user watches >= 85% of it
             if (!PlayerState.episodeMarkedWatched && (videoEl.currentTime / videoEl.duration) >= 0.85) {
                 PlayerState.episodeMarkedWatched = true;
                 if (PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
                     UserDataManager.recordEpisodeWatched(PlayerState.currentDrama, PlayerState.currentEpisodeNumber);
-                    if (elements.playerEpisodesStrip) {
-                        const btn = elements.playerEpisodesStrip.querySelector(`.sheet-ep-btn[data-ep="${PlayerState.currentEpisodeNumber}"]`);
-                        if (btn) {
-                            btn.classList.add('watched');
-                            if (!btn.textContent.includes('✓')) {
-                                btn.textContent = `EP ${PlayerState.currentEpisodeNumber} ▶ ✓`;
-                            }
-                        }
-                    }
-                    if (elements.sheetProgressText || elements.sheetProgressBarFill) {
-                        const total = (PlayerState.episodes && PlayerState.episodes.length > 0) ? PlayerState.episodes.length : (PlayerState.currentDrama?.episodes || 60);
-                        const prog = UserDataManager.getDramaProgress(PlayerState.currentDrama?.url);
-                        const watchedCount = (prog.watchedList || []).length;
-                        const progPct = total > 0 ? Math.min(100, Math.round((watchedCount / total) * 100)) : 0;
-                        if (elements.sheetProgressText) elements.sheetProgressText.textContent = `${watchedCount} / ${total} watched (${progPct}%)`;
-                        if (elements.sheetProgressBarFill) elements.sheetProgressBarFill.style.width = `${progPct}%`;
-                        if (elements.sheetProgressBarWrap) elements.sheetProgressBarWrap.style.display = total > 0 ? 'block' : 'none';
+                    if (elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) {
+                        renderEpisodesSheet(PlayerState.episodes, PlayerState.currentEpisodeNumber);
                     }
                 }
             }
@@ -4155,12 +5382,18 @@ function setupVideoPlayerEvents() {
         showPlayerBuffering(false);
     };
 
+    videoEl.onplay = () => {
+        PlayerState.isPlaying = true;
+        resetPlayerControlsTimer();
+    };
+
     videoEl.onplaying = () => {
         showPlayerBuffering(false);
         updateVideoAspectRatio();
         updateVideoQualityDisplay();
         if (elements.playerErrorOverlay) elements.playerErrorOverlay.style.display = 'none';
         PlayerState.isPlaying = true;
+        resetPlayerControlsTimer();
 
         // Track last watched episode position without prematurely marking it as completed
         if (PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
@@ -4170,6 +5403,13 @@ function setupVideoPlayerEvents() {
 
     videoEl.onpause = () => {
         PlayerState.isPlaying = false;
+        if (PlayerState.controlsHideTimer) {
+            clearTimeout(PlayerState.controlsHideTimer);
+            PlayerState.controlsHideTimer = null;
+        }
+        if (elements.reelPlayerContainer) {
+            elements.reelPlayerContainer.classList.remove('controls-hidden');
+        }
     };
 
     videoEl.onended = () => {
@@ -4180,7 +5420,9 @@ function setupVideoPlayerEvents() {
                 UserDataManager.recordEpisodeWatched(PlayerState.currentDrama, PlayerState.currentEpisodeNumber);
             }
         }
-        playNextEpisode();
+        triggerReelSwipeTransition('up', () => {
+            playNextEpisode(true);
+        });
     };
 }
 
@@ -4229,6 +5471,16 @@ function setupReelGestures() {
     const viewport = elements.reelVideoViewport;
     if (!viewport) return;
 
+    // Reset auto-hide controls timer on any touch or mouse movement inside the player
+    viewport.addEventListener('mousemove', resetPlayerControlsTimer);
+    viewport.addEventListener('touchstart', resetPlayerControlsTimer, { passive: true });
+
+    if (elements.reelPlayerContainer) {
+        elements.reelPlayerContainer.addEventListener('mousemove', resetPlayerControlsTimer);
+        elements.reelPlayerContainer.addEventListener('pointermove', resetPlayerControlsTimer);
+        elements.reelPlayerContainer.addEventListener('touchstart', resetPlayerControlsTimer, { passive: true });
+    }
+
     viewport.addEventListener('touchstart', (e) => {
         if (e.target.closest('.reel-right-rail') || e.target.closest('.reel-top-bar') || e.target.closest('.reel-bottom-bar') || e.target.closest('.reel-episodes-sheet')) {
             return;
@@ -4248,14 +5500,17 @@ function setupReelGestures() {
 
         // Vertical Swipe Gesture detection (threshold > 55px in under 650ms)
         if (Math.abs(diffY) > 55 && Math.abs(diffY) > Math.abs(diffX) && elapsed < 650) {
+            resetPlayerControlsTimer();
             if (diffY < -55) {
                 // Swipe UP -> Next Episode!
-                triggerReelSwipeTransition('up');
-                playNextEpisode();
+                triggerReelSwipeTransition('up', () => {
+                    playNextEpisode(true);
+                });
             } else if (diffY > 55) {
                 // Swipe DOWN -> Prev Episode!
-                triggerReelSwipeTransition('down');
-                playPrevEpisode();
+                triggerReelSwipeTransition('down', () => {
+                    playPrevEpisode(true);
+                });
             }
             return;
         }
@@ -4285,20 +5540,57 @@ function setupReelGestures() {
 
         if (e.deltaY > 60) {
             wheelDebounceTimer = setTimeout(() => { wheelDebounceTimer = null; }, 600);
-            triggerReelSwipeTransition('up');
-            playNextEpisode();
+            resetPlayerControlsTimer();
+            triggerReelSwipeTransition('up', () => {
+                playNextEpisode(true);
+            });
         } else if (e.deltaY < -60) {
             wheelDebounceTimer = setTimeout(() => { wheelDebounceTimer = null; }, 600);
-            triggerReelSwipeTransition('down');
-            playPrevEpisode();
+            resetPlayerControlsTimer();
+            triggerReelSwipeTransition('down', () => {
+                playPrevEpisode(true);
+            });
         }
     }, { passive: true });
+}
+
+/**
+ * Reset 5-second timer to auto-hide player controls during active video playback
+ */
+function resetPlayerControlsTimer() {
+    if (PlayerState.controlsHideTimer) {
+        clearTimeout(PlayerState.controlsHideTimer);
+        PlayerState.controlsHideTimer = null;
+    }
+    if (elements.reelPlayerContainer) {
+        elements.reelPlayerContainer.classList.remove('controls-hidden');
+    }
+
+    const videoEl = elements.playerVideoElement;
+    const isPlaying = (videoEl && !videoEl.paused && !videoEl.ended) || PlayerState.isPlaying;
+    if (!isPlaying) return;
+
+    if (elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) return;
+    if (elements.playerQualityMenu && elements.playerQualityMenu.style.display !== 'none') return;
+    if (!elements.playerModal || !elements.playerModal.classList.contains('active')) return;
+
+    PlayerState.controlsHideTimer = setTimeout(() => {
+        const currentVideoEl = elements.playerVideoElement;
+        const stillPlaying = (currentVideoEl && !currentVideoEl.paused && !currentVideoEl.ended) || PlayerState.isPlaying;
+        if (!stillPlaying) return;
+        if (elements.reelEpisodesSheet && elements.reelEpisodesSheet.classList.contains('active')) return;
+        if (elements.playerQualityMenu && elements.playerQualityMenu.style.display !== 'none') return;
+        if (elements.reelPlayerContainer) {
+            elements.reelPlayerContainer.classList.add('controls-hidden');
+        }
+    }, 5000);
 }
 
 /**
  * Handle screen tap -> Toggle Play / Pause instantly with center ripple feedback
  */
 function handleScreenTap(e) {
+    resetPlayerControlsTimer();
     togglePlayPause();
 }
 
@@ -4341,17 +5633,85 @@ function triggerHeartBubble() {
     }, 550);
 }
 
-function triggerReelSwipeTransition(direction) {
-    const container = elements.reelPlayerContainer;
-    if (!container) return;
-    container.style.transition = 'transform 0.15s ease-out';
-    container.style.transform = direction === 'up' ? 'translateY(-12px)' : 'translateY(12px)';
+let isSwipeAnimating = false;
+
+/**
+ * Native TikTok / YouTube Shorts sliding swipe transition without jarring buffering flicker
+ */
+function triggerReelSwipeTransition(direction, callback) {
+    const videoEl = elements.playerVideoElement;
+    const backdropEl = elements.reelBackdrop;
+
+    if (!videoEl || isSwipeAnimating) {
+        if (typeof callback === 'function') callback();
+        return;
+    }
+
+    isSwipeAnimating = true;
+    const isUp = direction === 'up';
+    const exitY = isUp ? '-100%' : '100%';
+    const enterY = isUp ? '100%' : '-100%';
+
+    // 1. Smoothly slide the current video out
+    videoEl.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease';
+    if (backdropEl) backdropEl.style.transition = 'opacity 0.2s ease';
+    videoEl.style.transform = `translateY(${exitY})`;
+    videoEl.style.opacity = '0.35';
+    if (backdropEl) backdropEl.style.opacity = '0.3';
+
     setTimeout(() => {
-        container.style.transform = 'translateY(0)';
-        setTimeout(() => {
-            container.style.transition = '';
-        }, 150);
-    }, 150);
+        // Trigger video source change while video is offscreen
+        if (typeof callback === 'function') callback();
+
+        // 2. Position incoming video at opposite side
+        videoEl.style.transition = 'none';
+        videoEl.style.transform = `translateY(${enterY})`;
+        videoEl.style.opacity = '0.35';
+
+        // Force browser layout reflow
+        void videoEl.offsetHeight;
+
+        // 3. Smoothly slide incoming video into center view
+        requestAnimationFrame(() => {
+            videoEl.style.transition = 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease';
+            if (backdropEl) backdropEl.style.transition = 'opacity 0.28s ease';
+            videoEl.style.transform = 'translateY(0)';
+            videoEl.style.opacity = '1';
+            if (backdropEl) backdropEl.style.opacity = '1';
+
+            setTimeout(() => {
+                videoEl.style.transition = '';
+                videoEl.style.transform = '';
+                videoEl.style.opacity = '';
+                if (backdropEl) {
+                    backdropEl.style.transition = '';
+                    backdropEl.style.opacity = '';
+                }
+                isSwipeAnimating = false;
+            }, 300);
+        });
+    }, 220);
+}
+
+/**
+ * Update player floating rail bookmark button
+ */
+function updatePlayerBookmarkButton(drama) {
+    if (!elements.playerBookmarkBtn) return;
+    const targetDrama = drama || (typeof PlayerState !== 'undefined' ? PlayerState.currentDrama : null);
+    if (!targetDrama) return;
+
+    const isSaved = UserDataManager.isBookmarked(targetDrama);
+    elements.playerBookmarkBtn.classList.toggle('is-saved', isSaved);
+    elements.playerBookmarkBtn.setAttribute('aria-label', isSaved ? 'Remove from My List' : 'Save to My List');
+    elements.playerBookmarkBtn.title = isSaved ? 'Remove from My List' : 'Save to My List';
+
+    if (elements.playerBookmarkIcon) {
+        elements.playerBookmarkIcon.innerHTML = isSaved ? PLAYER_BOOKMARK_FILLED_SVG : PLAYER_BOOKMARK_OUTLINE_SVG;
+    }
+    if (elements.playerBookmarkLabel) {
+        elements.playerBookmarkLabel.textContent = isSaved ? 'Saved' : 'Save';
+    }
 }
 
 /**
@@ -4406,104 +5766,245 @@ function toggleMute() {
 function openEpisodesSheet() {
     if (!elements.reelEpisodesSheet) return;
     elements.reelEpisodesSheet.classList.add('active');
+    if (elements.reelPlayerContainer) {
+        elements.reelPlayerContainer.classList.remove('controls-hidden');
+    }
+    if (PlayerState.controlsHideTimer) {
+        clearTimeout(PlayerState.controlsHideTimer);
+        PlayerState.controlsHideTimer = null;
+    }
     renderEpisodesSheet(PlayerState.episodes, PlayerState.currentEpisodeNumber);
+}
+
+function closeSheetRangeMenu() {
+    if (elements.sheetRangeMenu) elements.sheetRangeMenu.style.display = 'none';
+    if (elements.sheetRangeTrigger) {
+        elements.sheetRangeTrigger.classList.remove('open');
+        elements.sheetRangeTrigger.setAttribute('aria-expanded', 'false');
+    }
 }
 
 function closeEpisodesSheet() {
     if (!elements.reelEpisodesSheet) return;
     elements.reelEpisodesSheet.classList.remove('active');
+    closeSheetRangeMenu();
+    resetPlayerControlsTimer();
 }
 
 function renderEpisodesSheet(episodes, activeEpisodeNum) {
     if (!elements.playerEpisodesStrip) return;
-    const total = (episodes && episodes.length > 0) ? episodes.length : (PlayerState.currentDrama?.episodes || 60);
+
+    const drama = PlayerState.currentDrama;
+    const rawList = (episodes && episodes.length > 0)
+        ? episodes
+        : (drama && drama.episodeList && drama.episodeList.length > 0 ? drama.episodeList : []);
+    const totalCount = rawList.length > 0
+        ? rawList.length
+        : (drama?.episodes || 60);
+
+    const fullEpisodeList = rawList.length > 0
+        ? rawList
+        : Array.from({ length: totalCount }, (_, i) => ({ number: i + 1, url: getEpisodeWatchUrl(drama?.url || '', i + 1) }));
 
     if (elements.sheetEpTotal) {
-        elements.sheetEpTotal.textContent = `${total} Episodes`;
+        elements.sheetEpTotal.textContent = `${totalCount} Episodes`;
     }
 
-    function updateSheetProgress() {
-        const prog = UserDataManager.getDramaProgress(PlayerState.currentDrama?.url);
-        const watchedCount = (prog.watchedList || []).length;
-        const pct = total > 0 ? Math.min(100, Math.round((watchedCount / total) * 100)) : 0;
-        if (elements.sheetProgressText) {
-            elements.sheetProgressText.textContent = `${watchedCount} / ${total} watched (${pct}%)`;
-        }
-        if (elements.sheetProgressBarFill) {
-            elements.sheetProgressBarFill.style.width = `${pct}%`;
-        }
-        if (elements.sheetProgressBarWrap) {
-            elements.sheetProgressBarWrap.style.display = total > 0 ? 'block' : 'none';
-        }
-    }
+    const GROUP_SIZE = 24;
+    const EYE_ICON_SVG = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 
-    updateSheetProgress();
-
-    const GROUP_SIZE = 30;
-    const activeNum = Number(activeEpisodeNum) || 1;
-    const numGroups = Math.ceil(total / GROUP_SIZE);
+    const activeNum = Number(activeEpisodeNum) || PlayerState.currentEpisodeNumber || 1;
+    const groupsCount = Math.ceil(fullEpisodeList.length / GROUP_SIZE);
     let activeGroupIndex = Math.floor((activeNum - 1) / GROUP_SIZE);
-    if (activeGroupIndex < 0 || activeGroupIndex >= numGroups) {
+    if (activeGroupIndex < 0 || activeGroupIndex >= groupsCount) {
         activeGroupIndex = 0;
     }
 
-    function renderGroup(groupIndex) {
-        activeGroupIndex = groupIndex;
-        if (elements.sheetEpisodesTabs) {
-            elements.sheetEpisodesTabs.querySelectorAll('.ep-range-tab').forEach((tab, idx) => {
-                tab.classList.toggle('active', idx === groupIndex);
-            });
+    let filterText = (elements.sheetEpisodesSearchInput ? elements.sheetEpisodesSearchInput.value : '').trim().toLowerCase();
+
+    function closeRangeMenu() {
+        closeSheetRangeMenu();
+    }
+
+    function toggleRangeMenu() {
+        if (!elements.sheetRangeMenu) return;
+        const isOpen = elements.sheetRangeMenu.style.display !== 'none';
+        if (isOpen) {
+            closeRangeMenu();
+        } else {
+            elements.sheetRangeMenu.style.display = 'flex';
+            if (elements.sheetRangeTrigger) {
+                elements.sheetRangeTrigger.classList.add('open');
+                elements.sheetRangeTrigger.setAttribute('aria-expanded', 'true');
+            }
+        }
+    }
+
+    function renderRangeDropdown() {
+        const wrapEl = elements.sheetRangeSelectWrap;
+        const triggerEl = elements.sheetRangeTrigger;
+        const triggerTextEl = elements.sheetRangeTriggerText;
+        const menuEl = elements.sheetRangeMenu;
+
+        if (groupsCount <= 1) {
+            if (wrapEl) wrapEl.style.display = 'none';
+            closeRangeMenu();
+            return;
         }
 
-        const startIdx = groupIndex * GROUP_SIZE;
-        const endIdx = Math.min(startIdx + GROUP_SIZE, total);
-        const prog = UserDataManager.getDramaProgress(PlayerState.currentDrama?.url);
-        const pills = [];
+        if (activeGroupIndex < 0 || activeGroupIndex >= groupsCount) {
+            activeGroupIndex = 0;
+        }
 
-        for (let i = startIdx + 1; i <= endIdx; i++) {
-            const isActive = i === activeNum;
-            const isWatched = (prog.watchedList || []).includes(i);
+        if (wrapEl && triggerEl && menuEl) {
+            const currentStart = activeGroupIndex * GROUP_SIZE + 1;
+            const currentEnd = Math.min((activeGroupIndex + 1) * GROUP_SIZE, fullEpisodeList.length);
+            if (triggerTextEl) {
+                triggerTextEl.textContent = `${currentStart} - ${currentEnd}`;
+            }
+
+            wrapEl.style.display = 'inline-flex';
+
+            const CHECKMARK_SVG = `<svg class="detail-range-item-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+            const itemsHtml = Array.from({ length: groupsCount }, (_, i) => {
+                const start = i * GROUP_SIZE + 1;
+                const end = Math.min((i + 1) * GROUP_SIZE, fullEpisodeList.length);
+                const isActive = i === activeGroupIndex;
+                return `
+                    <button class="detail-range-item${isActive ? ' active' : ''}" type="button" data-group-index="${i}" role="option" aria-selected="${isActive}">
+                        <span class="detail-range-item-text">${start} - ${end}</span>
+                        ${isActive ? CHECKMARK_SVG : ''}
+                    </button>
+                `;
+            }).join('');
+
+            menuEl.innerHTML = itemsHtml;
+
+            menuEl.querySelectorAll('.detail-range-item').forEach(item => {
+                item.onclick = (e) => {
+                    e.stopPropagation();
+                    const gIdx = parseInt(item.getAttribute('data-group-index'), 10) || 0;
+                    activeGroupIndex = gIdx;
+                    closeRangeMenu();
+                    renderActiveEpisodes();
+                };
+            });
+
+            triggerEl.onclick = (e) => {
+                e.stopPropagation();
+                toggleRangeMenu();
+            };
+        }
+    }
+
+    function renderActiveEpisodes() {
+        const prog = UserDataManager.getDramaProgress(PlayerState.currentDrama);
+        const watchedList = Array.isArray(prog.watchedList) ? prog.watchedList : [];
+        let displayList = fullEpisodeList;
+        const isFiltered = Boolean(filterText);
+
+        if (isFiltered) {
+            displayList = fullEpisodeList.filter((ep, idx) => {
+                const epNum = typeof ep.number === 'number'
+                    ? ep.number
+                    : parseInt(String(ep.number || '').replace(/\D+/g, ''), 10) || (idx + 1);
+                const numStr = String(epNum);
+                const titleStr = (ep.title || `Episode ${epNum}`).toLowerCase();
+                return numStr.includes(filterText) || titleStr.includes(filterText);
+            });
+            closeRangeMenu();
+            if (elements.sheetRangeSelectWrap) {
+                elements.sheetRangeSelectWrap.style.display = 'none';
+            }
+        } else {
+            if (fullEpisodeList.length > GROUP_SIZE) {
+                const startIdx = activeGroupIndex * GROUP_SIZE;
+                const endIdx = Math.min(startIdx + GROUP_SIZE, fullEpisodeList.length);
+                displayList = fullEpisodeList.slice(startIdx, endIdx);
+                renderRangeDropdown();
+            } else {
+                displayList = fullEpisodeList;
+                closeRangeMenu();
+                if (elements.sheetRangeSelectWrap) {
+                    elements.sheetRangeSelectWrap.style.display = 'none';
+                }
+            }
+        }
+
+        const gridEl = elements.playerEpisodesStrip;
+        if (!gridEl) return;
+
+        if (displayList.length === 0) {
+            gridEl.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 36px 16px; text-align: center; color: var(--text-muted); font-size: 14px;">
+                    No episodes found matching "${escapeHtml(filterText)}"
+                </div>
+            `;
+            return;
+        }
+
+        const html = displayList.map((ep, sliceIdx) => {
+            const globalIdx = isFiltered ? fullEpisodeList.indexOf(ep) : (activeGroupIndex * GROUP_SIZE + sliceIdx);
+            const epNum = typeof ep.number === 'number'
+                ? ep.number
+                : (parseInt(String(ep.number || '').replace(/\D+/g, ''), 10) || (globalIdx >= 0 ? globalIdx + 1 : sliceIdx + 1));
+            const isWatched = watchedList.includes(epNum);
+            const isActive = PlayerState.currentEpisodeNumber === epNum;
+
             const classes = ['sheet-ep-btn'];
             if (isActive) classes.push('active');
             if (isWatched) classes.push('watched');
 
-            pills.push(`
-                <button class="${classes.join(' ')}" type="button" data-ep="${i}" title="${isActive ? `Episode ${i} (Playing)` : (isWatched ? `Episode ${i} (Watched)` : `Episode ${i}`)}">
-                    EP ${i}${isActive ? ' ▶' : (isWatched ? ' ✓' : '')}
+            const title = isActive
+                ? `Episode ${epNum} (Playing)`
+                : (isWatched ? `Episode ${epNum} (Watched — Press and hold to toggle)` : `Episode ${epNum} (Press and hold to mark watched)`);
+
+            const statusBadgeHtml = isActive
+                ? `<span class="sheet-ep-playing-badge">▶</span>`
+                : (isWatched ? `<span class="sheet-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
+
+            return `
+                <button class="${classes.join(' ')}" type="button" data-ep="${epNum}" data-ep-url="${escapeHtml(ep.url || '')}" title="${escapeHtml(title)}">
+                    <div class="sheet-ep-num-box">${epNum}</div>
+                    <div class="sheet-ep-status-badge">${statusBadgeHtml}</div>
                 </button>
-            `);
-        }
+            `;
+        }).join('');
 
-        elements.playerEpisodesStrip.innerHTML = pills.join('');
+        gridEl.innerHTML = html;
 
-        // Attach click listeners to jump to episode
-        elements.playerEpisodesStrip.querySelectorAll('.sheet-ep-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const ep = parseInt(btn.getAttribute('data-ep'), 10);
-                if (ep && PlayerState.currentDrama) {
-                    closeEpisodesSheet();
-                    const epUrl = getEpisodeWatchUrl(PlayerState.currentDrama.url, ep);
-                    playEpisode(PlayerState.currentDrama, ep, epUrl);
-                }
-            });
+        // Attach press-and-hold and click listeners to sheet episode buttons
+        gridEl.querySelectorAll('.sheet-ep-btn').forEach(btn => {
+            const ep = parseInt(btn.getAttribute('data-ep'), 10) || 1;
+            const epUrl = btn.getAttribute('data-ep-url') || '';
 
-            // Context menu / long-press: Allow manual toggle of watched status
-            btn.addEventListener('contextmenu', (e) => {
-                e.preventDefault();
-                const ep = parseInt(btn.getAttribute('data-ep'), 10);
-                if (ep && PlayerState.currentDrama) {
+            setupEpisodeButtonInteraction(btn, {
+                onPlay: () => {
+                    if (PlayerState.currentDrama) {
+                        closeEpisodesSheet();
+                        const targetUrl = epUrl || getEpisodeWatchUrl(PlayerState.currentDrama.url, ep);
+                        playEpisode(PlayerState.currentDrama, ep, targetUrl);
+                    }
+                },
+                onToggleWatched: () => {
+                    if (!PlayerState.currentDrama) return;
                     const nowWatched = UserDataManager.toggleEpisodeWatched(PlayerState.currentDrama, ep);
                     btn.classList.toggle('watched', nowWatched);
-                    const isCurrentlyActive = btn.classList.contains('active');
-                    btn.textContent = `EP ${ep}${isCurrentlyActive ? ' ▶' : (nowWatched ? ' ✓' : '')}`;
-                    updateSheetProgress();
-                    showToast(nowWatched ? `Marked EP ${ep} as watched` : `Marked EP ${ep} as unwatched`);
+                    const statusBadge = btn.querySelector('.sheet-ep-status-badge');
+                    if (statusBadge) {
+                        const isCurrentlyActive = btn.classList.contains('active');
+                        statusBadge.innerHTML = isCurrentlyActive
+                            ? `<span class="sheet-ep-playing-badge">▶</span>`
+                            : (nowWatched ? `<span class="sheet-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
+                    }
+                    showToast(nowWatched ? `Marked EP ${ep} as watched` : `Marked EP ${ep} as unwatched`, nowWatched ? 'success' : 'info');
                 }
             });
         });
 
         // Auto-scroll active episode into center view if in current group
-        const activeBtn = elements.playerEpisodesStrip.querySelector('.sheet-ep-btn.active');
+        const activeBtn = gridEl.querySelector('.sheet-ep-btn.active');
         if (activeBtn) {
             setTimeout(() => {
                 activeBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -4511,38 +6012,14 @@ function renderEpisodesSheet(episodes, activeEpisodeNum) {
         }
     }
 
-    // Render Range Tabs if total > GROUP_SIZE (grouped matching detail view modal)
-    if (total > GROUP_SIZE && elements.sheetEpisodesTabs) {
-        let tabsHtml = '';
-        for (let i = 0; i < numGroups; i++) {
-            const start = i * GROUP_SIZE + 1;
-            const end = Math.min((i + 1) * GROUP_SIZE, total);
-            const isActive = i === activeGroupIndex;
-            tabsHtml += `<button class="ep-range-tab${isActive ? ' active' : ''}" type="button" data-group-index="${i}">${start} - ${end}</button>`;
-        }
-        elements.sheetEpisodesTabs.innerHTML = tabsHtml;
-        elements.sheetEpisodesTabs.style.display = 'flex';
-
-        elements.sheetEpisodesTabs.querySelectorAll('.ep-range-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                const gIdx = parseInt(tab.getAttribute('data-group-index'), 10) || 0;
-                renderGroup(gIdx);
-            });
-        });
-
-        // Scroll active range tab into view
-        const activeTab = elements.sheetEpisodesTabs.querySelector('.ep-range-tab.active');
-        if (activeTab) {
-            setTimeout(() => {
-                activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
-            }, 80);
-        }
-    } else if (elements.sheetEpisodesTabs) {
-        elements.sheetEpisodesTabs.innerHTML = '';
-        elements.sheetEpisodesTabs.style.display = 'none';
+    if (elements.sheetEpisodesSearchInput) {
+        elements.sheetEpisodesSearchInput.oninput = () => {
+            filterText = elements.sheetEpisodesSearchInput.value.trim().toLowerCase();
+            renderActiveEpisodes();
+        };
     }
 
-    renderGroup(activeGroupIndex);
+    renderActiveEpisodes();
 }
 
 /**
@@ -4560,7 +6037,15 @@ function showPlayerError(msg) {
 function closePlayer() {
     showPlayerBuffering(false);
     closeEpisodesSheet();
+    closeSheetRangeMenu();
     toggleQualityMenu(false);
+    if (PlayerState.controlsHideTimer) {
+        clearTimeout(PlayerState.controlsHideTimer);
+        PlayerState.controlsHideTimer = null;
+    }
+    if (elements.reelPlayerContainer) {
+        elements.reelPlayerContainer.classList.remove('controls-hidden');
+    }
     if (PlayerState.hls) {
         PlayerState.hls.destroy();
         PlayerState.hls = null;
@@ -4576,13 +6061,13 @@ function closePlayer() {
 /**
  * Play Next Episode
  */
-function playNextEpisode() {
+function playNextEpisode(isSeamless = false) {
     if (!PlayerState.currentDrama) return;
     const nextEp = PlayerState.currentEpisodeNumber + 1;
     const maxEp = PlayerState.episodes.length || PlayerState.currentDrama.episodes || 100;
     if (nextEp <= maxEp) {
         const nextUrl = getEpisodeWatchUrl(PlayerState.currentDrama.url, nextEp);
-        playEpisode(PlayerState.currentDrama, nextEp, nextUrl);
+        playEpisode(PlayerState.currentDrama, nextEp, nextUrl, false, isSeamless);
     } else {
         showToast('Reached the final episode of this drama!');
     }
@@ -4591,12 +6076,12 @@ function playNextEpisode() {
 /**
  * Play Previous Episode
  */
-function playPrevEpisode() {
+function playPrevEpisode(isSeamless = false) {
     if (!PlayerState.currentDrama) return;
     const prevEp = PlayerState.currentEpisodeNumber - 1;
     if (prevEp >= 1) {
         const prevUrl = getEpisodeWatchUrl(PlayerState.currentDrama.url, prevEp);
-        playEpisode(PlayerState.currentDrama, prevEp, prevUrl);
+        playEpisode(PlayerState.currentDrama, prevEp, prevUrl, false, isSeamless);
     }
 }
 
@@ -4669,17 +6154,21 @@ function saveProxySettings() {
  */
 function showLoading() {
     hideAllResults();
-    if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
-    if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
-    if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    if (AppState.mode !== 'detail' && AppState.mode !== 'bookmarks') {
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    }
     if (elements.skeletonGrid) elements.skeletonGrid.style.display = 'grid';
 }
 
 function showEmpty(queryText = '', providerLabel = '') {
     hideAllResults();
-    if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
-    if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
-    if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    if (AppState.mode !== 'detail' && AppState.mode !== 'bookmarks') {
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    }
     if (elements.emptyState) {
         elements.emptyState.style.display = 'block';
         const pLabel = providerLabel || getProviderLabel(AppState.activeProvider);
@@ -4694,9 +6183,11 @@ function showEmpty(queryText = '', providerLabel = '') {
 
 function showError(message) {
     hideAllResults();
-    if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
-    if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
-    if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    if (AppState.mode !== 'detail' && AppState.mode !== 'bookmarks') {
+        if (elements.sectionHeaderBlock) elements.sectionHeaderBlock.style.display = 'flex';
+        if (elements.resultsBar) elements.resultsBar.style.display = 'flex';
+        if (elements.contentContainer) elements.contentContainer.style.display = 'block';
+    }
     if (elements.errorState) elements.errorState.style.display = 'block';
     if (elements.errorDesc) elements.errorDesc.textContent = message || 'An error occurred while fetching drama data.';
 }
