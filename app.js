@@ -1852,7 +1852,46 @@ document.addEventListener('DOMContentLoaded', () => {
         elements.sortSelect.value = savedSort;
     }
 
-    if (window.location.hash === '#mylist' || urlParams.get('view') === 'mylist') {
+    // Check if URL has #detail or ?drama= parameter, or if we were on detail before refresh
+    const isDetailView = window.location.hash === '#detail' || urlParams.has('drama');
+    let restoredDrama = null;
+    if (isDetailView) {
+        try {
+            const saved = localStorage.getItem('reeldrama_active_drama_detail') || sessionStorage.getItem('nd_selected_drama');
+            if (saved) {
+                restoredDrama = JSON.parse(saved);
+            }
+        } catch (_) {}
+
+        if (!restoredDrama) {
+            const dramaSlug = urlParams.get('drama');
+            if (dramaSlug) {
+                const bookmarks = (UserDataManager && typeof UserDataManager.getBookmarksList === 'function')
+                    ? UserDataManager.getBookmarksList()
+                    : [];
+                restoredDrama = bookmarks.find(b => {
+                    const s = b.id || (b.title ? b.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '');
+                    return s === dramaSlug;
+                });
+                if (!restoredDrama && UserDataManager?.data?.progress) {
+                    const progress = UserDataManager.data.progress;
+                    for (const key of Object.keys(progress)) {
+                        const p = progress[key];
+                        const s = p.id || (p.title ? p.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : '');
+                        if (s === dramaSlug) {
+                            restoredDrama = p;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (isDetailView && restoredDrama) {
+        AppState.lastMainMode = 'home';
+        openDramaDetailPage(restoredDrama);
+    } else if (window.location.hash === '#mylist' || urlParams.get('view') === 'mylist') {
         setAppMode('bookmarks');
     } else if (initialQuery && initialQuery.trim()) {
         if (elements.searchInput) {
@@ -1876,7 +1915,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         // If Detail page is open, back gesture restores the previous view smoothly without reloading
         if (AppState.mode === 'detail') {
+            try {
+                localStorage.removeItem('reeldrama_active_drama_detail');
+                sessionStorage.removeItem('nd_selected_drama');
+            } catch (_) {}
             closeDramaDetailPage();
+            if (!AppState.results || AppState.results.length === 0) {
+                triggerDynamicSearch('', AppState.activeProvider, AppState.currentLang);
+            }
             return;
         }
 
@@ -3940,6 +3986,10 @@ function updateDetailPageBookmarkCta(drama) {
 async function openDramaDetailPage(item, cardEl = null) {
     if (!item) return;
     AppState.selectedDrama = item;
+    try {
+        localStorage.setItem('reeldrama_active_drama_detail', JSON.stringify(item));
+        sessionStorage.setItem('nd_selected_drama', JSON.stringify(item));
+    } catch (_) {}
 
     // Immediately resolve total episode count from card / progress / bookmark / DOM to avoid any delay
     if (!item.episodes || item.episodes <= 0) {
@@ -4068,6 +4118,10 @@ async function openDramaDetailPage(item, cardEl = null) {
         if (detailData.episodeList && detailData.episodeList.length > 0) {
             item.episodeList = detailData.episodeList;
             item.episodes = detailData.episodeCount || detailData.episodeList.length;
+            try {
+                localStorage.setItem('reeldrama_active_drama_detail', JSON.stringify(item));
+                sessionStorage.setItem('nd_selected_drama', JSON.stringify(item));
+            } catch (_) {}
             renderEpisodesList(item.episodeList, item.episodes);
 
             if (elements.detailEpCount) {
@@ -4445,7 +4499,8 @@ function renderEpisodesList(episodeList, count) {
             const epNum = typeof ep.number === 'number' ? ep.number : (globalIdx >= 0 ? globalIdx + 1 : sliceIdx + 1);
             const epTitle = ep.title || `Episode ${epNum}`;
             const isWatched = (currentProg.watchedList || []).includes(epNum);
-            const isActive = isCurrentPlayingDrama && PlayerState.currentEpisodeNumber === epNum;
+            const isPlayerOpen = Boolean(elements.playerModal && elements.playerModal.classList.contains('active'));
+            const isActive = isPlayerOpen && isCurrentPlayingDrama && PlayerState.currentEpisodeNumber === epNum;
 
             const classes = ['detail-ep-card'];
             if (isActive) classes.push('active');
@@ -4513,11 +4568,22 @@ function renderEpisodesList(episodeList, count) {
 function closeDramaDetailPage() {
     closeDetailRangeMenu();
     if (AppState.mode !== 'detail') return;
+    try {
+        localStorage.removeItem('reeldrama_active_drama_detail');
+        sessionStorage.removeItem('nd_selected_drama');
+    } catch (_) {}
     if (window.location.hash === '#detail') {
         window.history.back();
     } else {
+        const searchParams = new URLSearchParams(window.location.search);
+        searchParams.delete('drama');
+        const newUrl = `${window.location.pathname}${searchParams.toString() ? '?' + searchParams.toString() : ''}`;
+        window.history.replaceState({}, '', newUrl);
         const prevMode = AppState.lastMainMode || (window.location.hash === '#mylist' ? 'bookmarks' : 'home');
         setAppMode(prevMode);
+        if (prevMode === 'home' && (!AppState.results || AppState.results.length === 0)) {
+            triggerDynamicSearch('', AppState.activeProvider, AppState.currentLang);
+        }
     }
 }
 
@@ -4564,6 +4630,9 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     PlayerState.currentDrama = drama;
     PlayerState.currentEpisodeNumber = epNum;
     PlayerState.episodeMarkedWatched = false;
+    try {
+        localStorage.setItem('reeldrama_active_drama_detail', JSON.stringify(drama));
+    } catch (_) {}
 
     // Immediately record position and auto-fill skipped preceding episodes
     UserDataManager.setLastWatchedEpisode(drama, epNum);
@@ -6101,6 +6170,32 @@ function closePlayer() {
     PlayerState.currentDrama = null;
     PlayerState.currentEpisodeNumber = null;
     closeModal(elements.playerModal);
+
+    // Remove active state and playing badge from all detail page episode cards
+    const EYE_SVG = `<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+    const dramaProg = AppState.selectedDrama ? UserDataManager.getDramaProgress(AppState.selectedDrama) : null;
+    const watchedList = Array.isArray(dramaProg?.watchedList) ? dramaProg.watchedList : [];
+
+    document.querySelectorAll('.detail-ep-card.active').forEach(card => {
+        card.classList.remove('active');
+        const epNum = parseInt(card.getAttribute('data-ep-num'), 10);
+        const isWatched = watchedList.includes(epNum) || card.classList.contains('watched');
+        const badgeEl = card.querySelector('.detail-ep-status-badge');
+        if (badgeEl) {
+            badgeEl.innerHTML = isWatched 
+                ? `<span class="detail-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_SVG}</span>`
+                : `<span></span>`;
+        }
+        if (epNum) {
+            card.title = isWatched 
+                ? `Episode ${epNum} (Watched — Press and hold to toggle)`
+                : `Episode ${epNum} (Press and hold to mark watched)`;
+        }
+    });
+
+    if (AppState.selectedDrama) {
+        updateDetailPagePlayCta(AppState.selectedDrama);
+    }
 }
 
 /**
