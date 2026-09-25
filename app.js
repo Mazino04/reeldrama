@@ -5593,9 +5593,19 @@ function resetPlayerControlsTimer() {
 }
 
 /**
- * Handle screen tap -> Toggle Play / Pause instantly with center ripple feedback
+ * Handle screen tap -> show controls if hidden, or toggle Play/Pause if already visible
  */
 function handleScreenTap(e) {
+    const controlsHidden = elements.reelPlayerContainer &&
+        elements.reelPlayerContainer.classList.contains('controls-hidden');
+
+    // First tap when controls are hidden: just reveal controls, don't pause
+    if (controlsHidden) {
+        resetPlayerControlsTimer();
+        return;
+    }
+
+    // Controls already visible: reset the hide timer AND toggle play/pause
     resetPlayerControlsTimer();
     togglePlayPause();
 }
