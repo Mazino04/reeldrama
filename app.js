@@ -163,7 +163,8 @@ const PlayerState = {
     touchStartTime: 0,
     lastTapTime: 0,
     episodeMarkedWatched: false,
-    controlsHideTimer: null
+    controlsHideTimer: null,
+    controlsWereHiddenOnTouch: false
 };
 
 /**
@@ -5477,20 +5478,24 @@ function setupReelGestures() {
     const viewport = elements.reelVideoViewport;
     if (!viewport) return;
 
-    // Reset auto-hide controls timer on any touch or mouse movement inside the player
+    // Reset auto-hide controls timer on mouse movement inside the player (desktop)
     viewport.addEventListener('mousemove', resetPlayerControlsTimer);
-    viewport.addEventListener('touchstart', resetPlayerControlsTimer, { passive: true });
 
     if (elements.reelPlayerContainer) {
         elements.reelPlayerContainer.addEventListener('mousemove', resetPlayerControlsTimer);
-        elements.reelPlayerContainer.addEventListener('pointermove', resetPlayerControlsTimer);
-        elements.reelPlayerContainer.addEventListener('touchstart', resetPlayerControlsTimer, { passive: true });
+        elements.reelPlayerContainer.addEventListener('pointermove', (e) => {
+            if (e.pointerType === 'mouse') resetPlayerControlsTimer();
+        });
     }
 
     viewport.addEventListener('touchstart', (e) => {
         if (e.target.closest('.reel-right-rail') || e.target.closest('.reel-top-bar') || e.target.closest('.reel-bottom-bar') || e.target.closest('.reel-episodes-sheet')) {
             return;
         }
+        // Capture whether controls were hidden at the exact moment of touchstart
+        PlayerState.controlsWereHiddenOnTouch = Boolean(
+            elements.reelPlayerContainer && elements.reelPlayerContainer.classList.contains('controls-hidden')
+        );
         PlayerState.touchStartY = e.touches[0].clientY;
         PlayerState.touchStartX = e.touches[0].clientX;
         PlayerState.touchStartTime = Date.now();
@@ -5506,6 +5511,7 @@ function setupReelGestures() {
 
         // Vertical Swipe Gesture detection (threshold > 55px in under 650ms)
         if (Math.abs(diffY) > 55 && Math.abs(diffY) > Math.abs(diffX) && elapsed < 650) {
+            PlayerState.controlsWereHiddenOnTouch = false;
             resetPlayerControlsTimer();
             if (diffY < -55) {
                 // Swipe UP -> Next Episode!
@@ -5596,10 +5602,13 @@ function resetPlayerControlsTimer() {
  * Handle screen tap -> show controls if hidden, or toggle Play/Pause if already visible
  */
 function handleScreenTap(e) {
-    const controlsHidden = elements.reelPlayerContainer &&
-        elements.reelPlayerContainer.classList.contains('controls-hidden');
+    const controlsHidden = (elements.reelPlayerContainer &&
+        elements.reelPlayerContainer.classList.contains('controls-hidden')) ||
+        Boolean(PlayerState.controlsWereHiddenOnTouch);
 
-    // First tap when controls are hidden: just reveal controls, don't pause
+    PlayerState.controlsWereHiddenOnTouch = false;
+
+    // First tap when controls are hidden: just reveal controls, don't pause video
     if (controlsHidden) {
         resetPlayerControlsTimer();
         return;

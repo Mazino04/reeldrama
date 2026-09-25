@@ -8,7 +8,7 @@
 // ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
 // Changing this string forces all clients to delete the old cache and
 // re-fetch every asset fresh from the network on their next visit.
-const CACHE_VERSION = 'v56-' + '2026-09-25';
+const CACHE_VERSION = 'v57-' + '2026-09-25-icons';
 const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -27,6 +27,8 @@ const PRECACHE_ASSETS = [
     './icons/icon.svg',
     './icons/icon-192.png',
     './icons/icon-512.png',
+    './icons/icon-maskable-192.png',
+    './icons/icon-maskable-512.png',
     'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'
 ];
 
