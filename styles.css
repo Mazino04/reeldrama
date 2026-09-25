@@ -64,7 +64,7 @@ body {
 }
 
 button, a, input, select, textarea, .reel-player-container, .reel-gesture-layer {
-    touch-action: manipulation;
+    touch-action: pan-x pan-y;
 }
 
 /* ==========================================================================
@@ -896,7 +896,7 @@ html.no-splash .app-splash-screen {
     border: none;
     outline: none;
     color: #fff;
-    font-size: 13.5px;
+    font-size: 16px;
     font-weight: 500;
 }
 
@@ -3010,7 +3010,7 @@ body.modal-open {
     background: transparent;
     border: none;
     color: #fff;
-    font-size: 13.5px;
+    font-size: 16px;
     outline: none;
     width: 100%;
 }

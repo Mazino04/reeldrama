@@ -2376,20 +2376,33 @@ function setupEventListeners() {
  * Keeps the PWA at a constant native app size across all devices
  */
 function setupZoomPrevention() {
-    // Prevent iOS Safari gesture zoom (pinch/spread)
+    // 1. Prevent multi-touch pinch zoom on Android Chrome and mobile touchscreens
+    document.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    document.addEventListener('touchmove', (e) => {
+        if (e.touches && e.touches.length > 1) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    // 2. Prevent iOS Safari gesture zoom (pinch/spread)
     const preventGesture = (e) => e.preventDefault();
     document.addEventListener('gesturestart', preventGesture, { passive: false });
     document.addEventListener('gesturechange', preventGesture, { passive: false });
     document.addEventListener('gestureend', preventGesture, { passive: false });
 
-    // Prevent Ctrl + Mousewheel / Ctrl + Trackpad zoom
+    // 3. Prevent Ctrl + Mousewheel / Ctrl + Trackpad zoom
     window.addEventListener('wheel', (e) => {
         if (e.ctrlKey) {
             e.preventDefault();
         }
     }, { passive: false });
 
-    // Prevent double-tap to zoom on mobile touchscreens (except inside input/textarea fields)
+    // 4. Prevent double-tap to zoom on mobile touchscreens (except inside input/textarea fields)
     let lastTouchTime = 0;
     document.addEventListener('touchend', (e) => {
         const now = Date.now();
