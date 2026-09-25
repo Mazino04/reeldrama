@@ -5076,15 +5076,19 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
 
     // Reset video element
     videoEl.onerror = null;
-    videoEl.pause();
-    videoEl.removeAttribute('src');
     videoEl.removeAttribute('controls');
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
     videoEl.setAttribute('x5-playsinline', '');
-    // Note: Do NOT suppress referrerpolicy here — CDN (hakunaymatata.com) requires
-    // a Referer header to be present. Sending no-referrer causes HTTP 428 errors.
-    videoEl.load();
+    if (!isSeamless) {
+        // Only hard-reset src on non-seamless loads to avoid the black/poster flash
+        // between auto-next episodes. The new src assignment below is sufficient.
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        // Note: Do NOT suppress referrerpolicy here — CDN (hakunaymatata.com) requires
+        // a Referer header to be present. Sending no-referrer causes HTTP 428 errors.
+        videoEl.load();
+    }
 
     // Set blurred backdrop poster if drama poster available
     if (elements.reelBackdrop && PlayerState.currentDrama?.poster) {
@@ -5447,10 +5451,12 @@ function setupScrubBar() {
     }
 
     container.addEventListener('click', (e) => {
+        e.stopPropagation();
         seekToEvent(e);
     });
 
     container.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
         PlayerState.isDraggingScrub = true;
         seekToEvent(e);
     }, { passive: true });
@@ -5597,6 +5603,10 @@ function handleScreenTap(e) {
 /**
  * Toggle Play / Pause with center ripple icon
  */
+// SVG icons for center feedback (avoids iOS yellow emoji backgrounds)
+const FEEDBACK_PLAY_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="52" height="52" fill="white"><path d="M8 5v14l11-7z"/></svg>`;
+const FEEDBACK_PAUSE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="52" height="52" fill="white"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>`;
+
 function togglePlayPause() {
     const videoEl = elements.playerVideoElement;
     if (!videoEl) return;
@@ -5609,16 +5619,16 @@ function togglePlayPause() {
 
     if (videoEl.paused) {
         videoEl.play().catch(() => {});
-        triggerCenterFeedback('▶');
+        triggerCenterFeedback(FEEDBACK_PLAY_SVG);
     } else {
         videoEl.pause();
-        triggerCenterFeedback('⏸');
+        triggerCenterFeedback(FEEDBACK_PAUSE_SVG);
     }
 }
 
-function triggerCenterFeedback(icon) {
+function triggerCenterFeedback(iconHtml) {
     if (!elements.reelCenterFeedback || !elements.reelFeedbackIcon) return;
-    elements.reelFeedbackIcon.textContent = icon;
+    elements.reelFeedbackIcon.innerHTML = iconHtml;
     elements.reelCenterFeedback.classList.add('active');
     setTimeout(() => {
         if (elements.reelCenterFeedback) elements.reelCenterFeedback.classList.remove('active');
@@ -6055,6 +6065,9 @@ function closePlayer() {
         elements.playerVideoElement.removeAttribute('src');
         elements.playerVideoElement.load();
     }
+    // Clear playing state so the detail page no longer highlights any episode as active
+    PlayerState.currentDrama = null;
+    PlayerState.currentEpisodeNumber = null;
     closeModal(elements.playerModal);
 }
 

@@ -4047,11 +4047,10 @@ body.modal-open {
 }
 
 .reel-feedback-icon {
-    font-size: 52px;
-    color: #fff;
-    filter: drop-shadow(0 2px 12px rgba(0, 0, 0, 0.55));
-    line-height: 1;
-    margin-left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    filter: drop-shadow(0 2px 16px rgba(0, 0, 0, 0.6));
 }
 
 /* Double-tap Heart Animation */
