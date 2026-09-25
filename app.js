@@ -4167,109 +4167,12 @@ const openQuickView = openDramaDetailPage;
 /**
  * Setup press-and-hold (long press) and click interactions on episode buttons.
  * - Tap/Click: plays the episode.
- * - Press & hold (~420ms): immediately marks episode as watched (or toggles watched state),
- *   giving tactile scale animation, haptic vibration, and toast feedback without launching playback.
- * - Right-click (contextmenu): also triggers toggle watched on desktop.
+ * Sets up click interaction on episode buttons to play the episode.
+ * Clean, instant, and prevents accidental long-press conflicts.
  */
-function setupEpisodeButtonInteraction(btn, { onPlay, onToggleWatched }) {
-    let pressTimer = null;
-    let isLongPress = false;
-    let startX = 0;
-    let startY = 0;
-    const HOLD_DURATION = 420;
-
-    const startPress = (clientX, clientY) => {
-        isLongPress = false;
-        startX = clientX;
-        startY = clientY;
-        btn.classList.add('is-pressing');
-        if (pressTimer) clearTimeout(pressTimer);
-        pressTimer = setTimeout(() => {
-            isLongPress = true;
-            btn.classList.remove('is-pressing');
-            btn.classList.add('pulse-watched');
-            setTimeout(() => btn.classList.remove('pulse-watched'), 320);
-            if (navigator.vibrate) {
-                try { navigator.vibrate(50); } catch (_) {}
-            }
-            onToggleWatched();
-        }, HOLD_DURATION);
-    };
-
-    const cancelPress = () => {
-        btn.classList.remove('is-pressing');
-        if (pressTimer) {
-            clearTimeout(pressTimer);
-            pressTimer = null;
-        }
-    };
-
-    // Touch events for mobile
-    btn.addEventListener('touchstart', (e) => {
-        if (e.touches && e.touches.length === 1) {
-            startPress(e.touches[0].clientX, e.touches[0].clientY);
-        }
-    }, { passive: true });
-
-    btn.addEventListener('touchmove', (e) => {
-        if (pressTimer && e.touches && e.touches.length === 1) {
-            const diffX = Math.abs(e.touches[0].clientX - startX);
-            const diffY = Math.abs(e.touches[0].clientY - startY);
-            if (diffX > 10 || diffY > 10) {
-                cancelPress();
-            }
-        }
-    }, { passive: true });
-
-    btn.addEventListener('touchend', () => {
-        cancelPress();
-    });
-
-    btn.addEventListener('touchcancel', () => {
-        cancelPress();
-    });
-
-    // Mouse pointer events for desktop hold
-    btn.addEventListener('mousedown', (e) => {
-        if (e.button === 0) {
-            startPress(e.clientX, e.clientY);
-        }
-    });
-
-    btn.addEventListener('mousemove', (e) => {
-        if (pressTimer) {
-            const diffX = Math.abs(e.clientX - startX);
-            const diffY = Math.abs(e.clientY - startY);
-            if (diffX > 10 || diffY > 10) {
-                cancelPress();
-            }
-        }
-    });
-
-    btn.addEventListener('mouseup', () => {
-        cancelPress();
-    });
-
-    btn.addEventListener('mouseleave', () => {
-        cancelPress();
-    });
-
-    // Right-click contextmenu for desktop
-    btn.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        cancelPress();
-        onToggleWatched();
-    });
-
-    // Regular click (runs onPlay only if not a long press)
+function setupEpisodeButtonInteraction(btn, { onPlay }) {
     btn.addEventListener('click', (e) => {
-        if (isLongPress) {
-            e.preventDefault();
-            e.stopPropagation();
-            isLongPress = false;
-            return;
-        }
+        e.preventDefault();
         onPlay();
     });
 }
@@ -4508,7 +4411,7 @@ function renderEpisodesList(episodeList, count) {
 
             const title = isActive
                 ? `Episode ${epNum} (Playing)`
-                : (isWatched ? `Episode ${epNum} (Watched — Press and hold to toggle)` : `Episode ${epNum} (Press and hold to mark watched)`);
+                : (isWatched ? `Episode ${epNum} (Watched)` : `Episode ${epNum}`);
 
             const statusBadgeHtml = isActive
                 ? `<span class="detail-ep-playing-badge">▶ Playing</span>`
@@ -4525,30 +4428,15 @@ function renderEpisodesList(episodeList, count) {
 
         gridEl.innerHTML = html;
 
-        // Attach press-and-hold and click listeners to episode cards
+        // Attach clean click listeners to episode cards to play immediately
         gridEl.querySelectorAll('.detail-ep-card').forEach(btn => {
             const epNum = parseInt(btn.getAttribute('data-ep-num'), 10) || 1;
             const epUrl = btn.getAttribute('data-ep-url') || '';
 
-            setupEpisodeButtonInteraction(btn, {
-                onPlay: () => {
-                    if (AppState.selectedDrama) {
-                        playEpisode(AppState.selectedDrama, epNum, epUrl);
-                    }
-                },
-                onToggleWatched: () => {
-                    if (!AppState.selectedDrama) return;
-                    const nowWatched = UserDataManager.toggleEpisodeWatched(AppState.selectedDrama, epNum);
-                    btn.classList.toggle('watched', nowWatched);
-                    const statusBadge = btn.querySelector('.detail-ep-status-badge');
-                    if (statusBadge) {
-                        const isCurrentlyActive = btn.classList.contains('active');
-                        statusBadge.innerHTML = isCurrentlyActive
-                            ? `<span class="detail-ep-playing-badge">▶ Playing</span>`
-                            : (nowWatched ? `<span class="detail-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
-                    }
-                    updateDetailPageProgress();
-                    showToast(nowWatched ? `Marked EP ${epNum} as watched` : `Marked EP ${epNum} as unwatched`, nowWatched ? 'success' : 'info');
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (AppState.selectedDrama) {
+                    playEpisode(AppState.selectedDrama, epNum, epUrl);
                 }
             });
         });
@@ -6069,7 +5957,7 @@ function renderEpisodesSheet(episodes, activeEpisodeNum) {
 
             const title = isActive
                 ? `Episode ${epNum} (Playing)`
-                : (isWatched ? `Episode ${epNum} (Watched — Press and hold to toggle)` : `Episode ${epNum} (Press and hold to mark watched)`);
+                : (isWatched ? `Episode ${epNum} (Watched)` : `Episode ${epNum}`);
 
             const statusBadgeHtml = isActive
                 ? `<span class="sheet-ep-playing-badge">▶</span>`
@@ -6085,31 +5973,17 @@ function renderEpisodesSheet(episodes, activeEpisodeNum) {
 
         gridEl.innerHTML = html;
 
-        // Attach press-and-hold and click listeners to sheet episode buttons
+        // Attach clean click listeners to sheet episode buttons to play immediately
         gridEl.querySelectorAll('.sheet-ep-btn').forEach(btn => {
             const ep = parseInt(btn.getAttribute('data-ep'), 10) || 1;
             const epUrl = btn.getAttribute('data-ep-url') || '';
 
-            setupEpisodeButtonInteraction(btn, {
-                onPlay: () => {
-                    if (PlayerState.currentDrama) {
-                        closeEpisodesSheet();
-                        const targetUrl = epUrl || getEpisodeWatchUrl(PlayerState.currentDrama.url, ep);
-                        playEpisode(PlayerState.currentDrama, ep, targetUrl);
-                    }
-                },
-                onToggleWatched: () => {
-                    if (!PlayerState.currentDrama) return;
-                    const nowWatched = UserDataManager.toggleEpisodeWatched(PlayerState.currentDrama, ep);
-                    btn.classList.toggle('watched', nowWatched);
-                    const statusBadge = btn.querySelector('.sheet-ep-status-badge');
-                    if (statusBadge) {
-                        const isCurrentlyActive = btn.classList.contains('active');
-                        statusBadge.innerHTML = isCurrentlyActive
-                            ? `<span class="sheet-ep-playing-badge">▶</span>`
-                            : (nowWatched ? `<span class="sheet-ep-eye-badge" title="Watched" aria-label="Watched">${EYE_ICON_SVG}</span>` : `<span></span>`);
-                    }
-                    showToast(nowWatched ? `Marked EP ${ep} as watched` : `Marked EP ${ep} as unwatched`, nowWatched ? 'success' : 'info');
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (PlayerState.currentDrama) {
+                    closeEpisodesSheet();
+                    const targetUrl = epUrl || getEpisodeWatchUrl(PlayerState.currentDrama.url, ep);
+                    playEpisode(PlayerState.currentDrama, ep, targetUrl);
                 }
             });
         });
@@ -6188,8 +6062,8 @@ function closePlayer() {
         }
         if (epNum) {
             card.title = isWatched 
-                ? `Episode ${epNum} (Watched — Press and hold to toggle)`
-                : `Episode ${epNum} (Press and hold to mark watched)`;
+                ? `Episode ${epNum} (Watched)`
+                : `Episode ${epNum}`;
         }
     });
 
