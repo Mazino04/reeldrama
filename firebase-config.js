@@ -14,14 +14,19 @@
  */
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBhGNUNP635RbItGJeZIhQCaUBJpo6lwO4",
-  authDomain: "short-reels-c938b.firebaseapp.com",
-  databaseURL: "https://short-reels-c938b-default-rtdb.firebaseio.com",
-  projectId: "short-reels-c938b",
-  storageBucket: "short-reels-c938b.firebasestorage.app",
-  messagingSenderId: "482772508607",
-  appId: "1:482772508607:web:6283b09d138818934d8b0a",
+  apiKey: "__FIREBASE_API_KEY__",
+  authDomain: "__FIREBASE_AUTH_DOMAIN__",
+  databaseURL: "__FIREBASE_DATABASE_URL__",
+  projectId: "__FIREBASE_PROJECT_ID__",
+  storageBucket: "__FIREBASE_STORAGE_BUCKET__",
+  messagingSenderId: "__FIREBASE_MESSAGING_SENDER_ID__",
+  appId: "__FIREBASE_APP_ID__"
 };
+
+// Optional local development override: if a local configuration script exists or is loaded beforehand
+if (typeof window !== 'undefined' && window.__FIREBASE_CONFIG_OVERRIDE__) {
+  Object.assign(firebaseConfig, window.__FIREBASE_CONFIG_OVERRIDE__);
+}
 
 // Internal Firebase state
 let firebaseAuth = null;
@@ -37,8 +42,10 @@ function isFirebaseConfigured() {
     return Boolean(
         firebaseConfig.apiKey &&
         !firebaseConfig.apiKey.includes('YOUR_') &&
+        !firebaseConfig.apiKey.startsWith('__') &&
         firebaseConfig.projectId &&
-        !firebaseConfig.projectId.includes('YOUR_')
+        !firebaseConfig.projectId.includes('YOUR_') &&
+        !firebaseConfig.projectId.startsWith('__')
     );
 }
 

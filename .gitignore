@@ -1,0 +1,8 @@
+# Local environment and secret overrides
+.env
+.env.local
+firebase-config.local.js
+
+# OS generated files
+.DS_Store
+Thumbs.db
