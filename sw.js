@@ -8,7 +8,7 @@
 // ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
 // Changing this string forces all clients to delete the old cache and
 // re-fetch every asset fresh from the network on their next visit.
-const CACHE_VERSION = 'v75-' + '2026-09-30-dynamic-source-refresh-support';
+const CACHE_VERSION = 'v76-' + '2026-09-30-firebase-secrets-deployment';
 const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
 // ─────────────────────────────────────────────────────────────────────────────
 

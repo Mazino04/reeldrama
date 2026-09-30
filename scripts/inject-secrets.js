@@ -31,8 +31,13 @@ for (const [placeholder, val] of Object.entries(replacements)) {
 fs.writeFileSync(configPath, content, 'utf8');
 
 if (missing.length > 0) {
-  console.warn('⚠️  Warning: The following Firebase secrets were empty or not provided:');
-  missing.forEach(m => console.warn(`   - ${m}`));
+  console.error('❌ Error: The following required Firebase secrets were empty or not configured:');
+  missing.forEach(m => console.error(`   - ${m}`));
+  if (process.env.CI) {
+    console.error('\nPlease add these secrets in your GitHub repository:');
+    console.error('Settings -> Secrets and variables -> Actions -> New repository secret');
+    process.exit(1);
+  }
 } else {
-  console.log('✅ Firebase configuration secrets successfully injected into firebase-config.js');
+  console.log('✅ All Firebase configuration secrets successfully injected into firebase-config.js');
 }
