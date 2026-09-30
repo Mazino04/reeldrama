@@ -1,7 +1,7 @@
 const https = require('https');
 const DramaParser = require('./parser.js');
 
-const CF_WORKER_URL = 'https://bold-hill-9a84.aleperaza45.workers.dev';
+const CF_WORKER_URL = 'https://reeldrama.proxy-3b8.workers.dev';
 
 async function fetchFastHtml(targetUrl) {
     const proxyUrl = `${CF_WORKER_URL.replace(/\/+$/, '')}/?url=${encodeURIComponent(targetUrl)}`;

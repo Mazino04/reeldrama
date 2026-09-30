@@ -12,7 +12,7 @@
  * Leave as empty string ('') to use the built-in public proxy fallback chain.
  * ─────────────────────────────────────────────────────────────────────────────
  */
-const CF_WORKER_URL = 'https://bold-hill-9a84.aleperaza45.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
+const CF_WORKER_URL = 'https://reeldrama.proxy-3b8.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
 
 // Domains that supply their own CORS headers (Access-Control-Allow-Origin: *)
 // or reject worker proxying with 403 (due to auth_key or Referer validation).
