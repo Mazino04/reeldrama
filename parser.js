@@ -385,10 +385,17 @@ const DramaParser = (() => {
             .replace(/&gt;/g, '>')
             .replace(/&quot;/g, '"')
             .replace(/&#39;/g, "'")
-            .replace(/\bNarto\s*Drama\b/gi, '')
-            .replace(/\bNartoDrama\b/gi, '')
             .replace(/\s+-\s+Free Streaming\b/gi, '')
             .replace(/\s+-\s+Narto Drama\b/gi, '')
+            .replace(/\s+-\s+DramaWave\b/gi, '')
+            .replace(/\s+-\s+AnyReel\b/gi, '')
+            .replace(/\s+-\s+BibiShort\b/gi, '')
+            .replace(/\bNarto\s*Drama\b/gi, '')
+            .replace(/\bNartoDrama\b/gi, '')
+            .replace(/\bDramaWave\b/gi, '')
+            .replace(/\bAnyReel\b/gi, '')
+            .replace(/\bBibiShort\b/gi, '')
+            .replace(/\s*[-–—:]\s*$/g, '')
             .trim();
 
         return cleaned;
@@ -418,7 +425,7 @@ const DramaParser = (() => {
      * Check if a tag or word is provider branding
      */
     function isBrandedWord(word) {
-        return /narto|dramabox|bilitv|shortical/i.test(word);
+        return /narto|dramabox|bilitv|shortical|dramawave|anyreel|bibishort/i.test(word);
     }
 
     /**

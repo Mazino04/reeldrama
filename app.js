@@ -36,14 +36,17 @@ function shouldBypassProxy(url) {
     }
 }
 
-// Allowed Short Drama Providers (6 Dedicated Providers)
+// Allowed Short Drama Providers (9 Dedicated Providers - Alphabetical)
 const ALLOWED_PROVIDERS = [
+    { key: 'anyreel', label: 'AnyReel', icon: '🎞️' },
+    { key: 'bibishort', label: 'BibiShort', icon: '🐝' },
     { key: 'dramabox', label: 'DramaBox', icon: '📦' },
-    { key: 'reelshort', label: 'ReelShort', icon: '⚡' },
+    { key: 'dramashorts', label: 'DramaShorts', icon: '🎬' },
+    { key: 'dramawave', label: 'DramaWave', icon: '🌊' },
     { key: 'flickreels', label: 'FlickReels', icon: '🍿' },
-    { key: 'netshort', label: 'NetShort', icon: '🌐' },
     { key: 'goodshort', label: 'GoodShort', icon: '✨' },
-    { key: 'dramashorts', label: 'DramaShorts', icon: '🎬' }
+    { key: 'netshort', label: 'NetShort', icon: '🌐' },
+    { key: 'reelshort', label: 'ReelShort', icon: '⚡' }
 ];
 
 // Bookmark Button Icons (Filled for saved/My List, Outline for unsaved)
@@ -61,17 +64,17 @@ const PLAYER_BOOKMARK_OUTLINE_SVG = `<svg width="26" height="26" viewBox="0 0 24
 const PLAYER_BOOKMARK_FILLED_SVG = `<svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
 
 function getProviderLabel(key) {
-    if (!key) return 'DramaBox';
+    if (!key) return 'AnyReel';
     const clean = String(key).trim().toLowerCase();
     const found = ALLOWED_PROVIDERS.find(p => p.key === clean || p.label.toLowerCase() === clean);
-    return found ? found.label : (String(key).trim() || 'DramaBox');
+    return found ? found.label : (String(key).trim() || 'AnyReel');
 }
 
 /**
  * Extract human-readable provider name for an item
  */
 function getItemProviderName(item) {
-    if (!item) return getProviderLabel(AppState.activeProvider || 'dramabox');
+    if (!item) return getProviderLabel(AppState.activeProvider || 'anyreel');
     // 1. Explicit category_name from API
     if (item.category_name && typeof item.category_name === 'string' && item.category_name.trim()) {
         return getProviderLabel(item.category_name.trim());
@@ -98,7 +101,7 @@ function getItemProviderName(item) {
         } catch (_) {}
     }
     // 5. Fallback to active provider
-    return getProviderLabel(AppState.activeProvider || 'dramabox');
+    return getProviderLabel(AppState.activeProvider || 'anyreel');
 }
 
 // Allowed Search Languages (en-US / es-ES)
@@ -112,11 +115,11 @@ function getLanguageLabel(code) {
     return found ? `${found.flag} ${found.label}` : '🇺🇸 English';
 }
 
-// Validate saved provider & language from localStorage, defaulting strictly to dramabox & en-US
-const savedProvider = localStorage.getItem('nd_active_provider');
-const initialProvider = (savedProvider && ALLOWED_PROVIDERS.some(p => p.key === savedProvider.toLowerCase())) 
-    ? savedProvider.toLowerCase() 
-    : 'dramabox';
+// Provider always starts on the first provider ('anyreel') upon app load or page refresh
+const initialProvider = ALLOWED_PROVIDERS[0].key; // 'anyreel'
+try {
+    localStorage.removeItem('nd_active_provider');
+} catch (_) {}
 
 const savedLang = localStorage.getItem('nd_search_lang');
 const initialLang = (savedLang && ALLOWED_LANGS.some(l => l.code === savedLang)) 
@@ -144,6 +147,8 @@ const StreamCache = new Map();
 
 // Streaming Player State
 const PlayerState = {
+    isOpen: false,
+    playSessionId: 0,
     currentDrama: null,
     currentEpisodeNumber: 1,
     currentEpisodeUrl: '',
@@ -155,6 +160,7 @@ const PlayerState = {
     isLoading: false,
     isPlaying: false,
     isMuted: false,
+    userPrefersMuted: false,
     isLiked: false,
     likeCounts: {},
     isDraggingScrub: false,
@@ -294,7 +300,7 @@ const UserDataManager = {
         if (s === 'watch' || s === 'detail' || s === 'search' || s === 'import' || s === 'book' || s === 'drama') return true;
         if (s === '/search/import' || s === '/import' || s === '/search' || s === '/detail/watch' || s === '/watch') return true;
         if (s.startsWith('https://narto-drama.com') && (s.endsWith('/search/import') || s.endsWith('/search') || s.endsWith('/watch') || s.endsWith('/detail/watch') || s === 'https://narto-drama.com' || s === 'https://narto-drama.com/')) return true;
-        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'flickreels_' || s === 'shortmax_') return true;
+        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'dramawave_' || s === 'anyreel_' || s === 'bibishort_' || s === 'flickreels_' || s === 'shortmax_') return true;
         return false;
     },
 
@@ -353,7 +359,7 @@ const UserDataManager = {
             keys.add(`book_${coreId.toLowerCase()}`);
             keys.add(`detail_${coreId.toLowerCase()}`);
 
-            const providers = ['dramabox', 'reelshort', 'shortmax', 'goodshort', 'sereal', 'netshort', 'flickreels', 'moboreels', 'stardust'];
+            const providers = ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'goodshort', 'netshort', 'reelshort', 'shortmax', 'sereal', 'moboreels', 'stardust'];
             const targetProv = (typeof target === 'object' ? (target.provider || target.category_name) : '') || '';
             if (targetProv) {
                 const cleanProv = targetProv.toLowerCase().replace(/\s+/g, '');
@@ -401,7 +407,7 @@ const UserDataManager = {
                 const prov = record.provider.toLowerCase().replace(/\s+/g, '');
                 if (!this.isGenericIdentifier(prov)) aliases.add(`${prov}_${coreId}`);
             }
-            ['dramabox', 'reelshort', 'shortmax', 'goodshort', 'sereal', 'netshort', 'flickreels', 'moboreels', 'stardust'].forEach(p => {
+            ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'goodshort', 'netshort', 'reelshort', 'shortmax', 'sereal', 'moboreels', 'stardust'].forEach(p => {
                 aliases.add(`${p}_${coreId}`);
             });
         }
@@ -1827,15 +1833,15 @@ document.addEventListener('DOMContentLoaded', () => {
     registerServiceWorker();
     setupPwaInstall();
 
-    // Check if URL has #mylist or ?q= / ?provider= parameters
+    // Check if URL has #mylist or ?q= parameters
     const urlParams = new URLSearchParams(window.location.search);
     const initialQuery = urlParams.get('q');
-    const initialProvider = urlParams.get('provider');
 
-    if (initialProvider && ALLOWED_PROVIDERS.some(p => p.key === initialProvider.toLowerCase())) {
-        AppState.activeProvider = initialProvider.toLowerCase();
-        localStorage.setItem('nd_active_provider', AppState.activeProvider);
-    }
+    // Always start on the first provider ('anyreel') whenever the app refreshes or loads
+    AppState.activeProvider = ALLOWED_PROVIDERS[0].key;
+    try {
+        localStorage.removeItem('nd_active_provider');
+    } catch (_) {}
     updateProviderTabsUI(AppState.activeProvider);
 
     const initialLang = urlParams.get('lang');
@@ -2996,7 +3002,7 @@ function updateVisibleCardProgress() {
  * Update UI highlighting for provider tabs
  */
 function updateProviderTabsUI(activeKey) {
-    const key = (activeKey || AppState.activeProvider || 'dramabox').toLowerCase();
+    const key = (activeKey || AppState.activeProvider || 'anyreel').toLowerCase();
     document.querySelectorAll('.provider-tab-pill').forEach(pill => {
         const pKey = pill.getAttribute('data-provider');
         const isActive = pKey === key;
@@ -3012,7 +3018,6 @@ function selectProvider(providerKey) {
     if (!providerKey) return;
     const cleanKey = providerKey.toLowerCase();
     AppState.activeProvider = cleanKey;
-    localStorage.setItem('nd_active_provider', cleanKey);
     updateProviderTabsUI(cleanKey);
 
     const query = elements.searchInput ? elements.searchInput.value.trim() : (AppState.currentQuery || '');
@@ -3108,7 +3113,7 @@ function parseProviderSectionsResponse(data, fallbackBaseUrl = 'https://narto-dr
     if (!data || typeof data !== 'object') return [];
     const items = [];
     const seenUrls = new Set();
-    const activeProvider = data.active_provider || AppState.activeProvider || 'dramabox';
+    const activeProvider = data.active_provider || AppState.activeProvider || 'anyreel';
     const activeLang = AppState.currentLang || 'en-US';
     const cleanQuery = (query || '').trim().toLowerCase();
 
@@ -3248,7 +3253,7 @@ async function fetchFastJson(targetUrl) {
  */
 async function fetchProviderSections(providerKey, query = '', lang = null) {
     const cleanQuery = (query || '').trim();
-    const cleanProvider = (providerKey || AppState.activeProvider || 'dramabox').toLowerCase();
+    const cleanProvider = (providerKey || AppState.activeProvider || 'anyreel').toLowerCase();
     const cleanLang = (lang || AppState.currentLang || 'en-US');
 
     let items = [];
@@ -3287,13 +3292,12 @@ async function triggerDynamicSearch(query = '', providerKey = null, lang = null,
     const cleanQuery = (query || '').trim();
     if (providerKey) {
         AppState.activeProvider = providerKey.toLowerCase();
-        localStorage.setItem('nd_active_provider', AppState.activeProvider);
     }
     if (lang && ALLOWED_LANGS.some(l => l.code === lang)) {
         AppState.currentLang = lang;
         localStorage.setItem('nd_search_lang', AppState.currentLang);
     }
-    const activeProv = AppState.activeProvider || 'dramabox';
+    const activeProv = AppState.activeProvider || 'anyreel';
     const activeLang = AppState.currentLang || 'en-US';
     AppState.currentQuery = cleanQuery;
 
@@ -4514,6 +4518,10 @@ function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
 async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh = false, isSeamless = false) {
     if (!drama) return;
 
+    PlayerState.isOpen = true;
+    PlayerState.playSessionId = (PlayerState.playSessionId || 0) + 1;
+    const currentSession = PlayerState.playSessionId;
+
     const epNum = parseInt(episodeNumber, 10) || 1;
     PlayerState.currentDrama = drama;
     PlayerState.currentEpisodeNumber = epNum;
@@ -4573,6 +4581,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     if (cleanWatchUrl.includes('/search/import')) {
         try {
             const { html: importHtml } = await fetchFastHtml(cleanWatchUrl);
+            if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
             const detailData = DramaParser.parseEpisodesFromDetailPage(importHtml, 'https://narto-drama.com');
             if (detailData.canonicalUrl) {
                 drama.url = detailData.canonicalUrl;
@@ -4598,6 +4607,8 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
         PlayerState.currentEpisodeUrl = cleanWatchUrl;
     }
 
+    if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+
     // If stream data for this entire drama is ALREADY cached, instant playback!
     const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
     if (!forceRefresh && StreamCache.has(dramaKey)) {
@@ -4613,7 +4624,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                     showToast('This episode is not available at this moment or has been removed');
                     return;
                 }
-                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp, isSeamless);
+                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp, isSeamless, currentSession);
                 return;
             }
         }
@@ -4622,6 +4633,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     // Fetch the episode watch page HTML to extract streams
     try {
         const { html } = await fetchFastHtml(cleanWatchUrl);
+        if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
         const streamData = DramaParser.extractStreamData(html, cleanWatchUrl);
 
         if (streamData.episodes && streamData.episodes.length > 0) {
@@ -4641,7 +4653,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             }
 
             if (targetUrl) {
-                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp, isSeamless);
+                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp, isSeamless, currentSession);
                 return;
             }
         } else if (streamData.streamUrl) {
@@ -4650,13 +4662,16 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                 showToast('This episode is not available at this moment or has been removed');
                 return;
             }
-            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless);
+            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless, currentSession);
             return;
         }
 
         // Stream URL could not be found
-        showPlayerError('Video stream could not be extracted from this episode.');
+        if (PlayerState.isOpen && PlayerState.playSessionId === currentSession) {
+            showPlayerError('Video stream could not be extracted from this episode.');
+        }
     } catch (err) {
+        if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
         if (err && (err.status === 410 || /410/.test(err.message))) {
             closePlayer();
             showToast('This episode is not available at this moment or has been removed');
@@ -4970,15 +4985,40 @@ function showPlayerBuffering(show = true) {
  * Attempt video playback with mobile autoplay policy fallback (auto-mute if unmuted autoplay blocked)
  */
 function attemptAutoplay(videoEl) {
-    if (!videoEl) return;
+    if (!videoEl || !PlayerState.isOpen) return;
+
+    // Respect user's explicit preference if chosen, default to sound ON
+    const shouldMute = PlayerState.userPrefersMuted === true;
+    videoEl.muted = shouldMute;
+    PlayerState.isMuted = shouldMute;
+    updateMuteButtonUI();
+
     const playPromise = videoEl.play();
     if (playPromise !== undefined) {
-        playPromise.catch(async (playErr) => {
+        playPromise.then(() => {
+            if (!PlayerState.isOpen) {
+                try { videoEl.pause(); } catch (_) {}
+                return;
+            }
+            PlayerState.isPlaying = true;
+            if (PlayerState.userPrefersMuted !== true && videoEl.muted) {
+                videoEl.muted = false;
+                PlayerState.isMuted = false;
+            }
+            updateMuteButtonUI();
+        }).catch(async (playErr) => {
+            if (!PlayerState.isOpen) return;
             if (playErr && playErr.name === 'NotAllowedError') {
+                // Autoplay blocked without user gesture: start temporarily muted so
+                // playback starts with ZERO delay, but KEEP userPrefersMuted = false so the next swipe/tap unblocks sound!
                 videoEl.muted = true;
                 PlayerState.isMuted = true;
+                updateMuteButtonUI();
                 try {
-                    await videoEl.play();
+                    if (PlayerState.isOpen) {
+                        await videoEl.play();
+                        PlayerState.isPlaying = true;
+                    }
                 } catch (_) {}
             }
         });
@@ -4986,9 +5026,95 @@ function attemptAutoplay(videoEl) {
 }
 
 /**
+ * Preload initial bytes/manifest of stream into browser and Cloudflare edge cache
+ */
+const preloadedStreamUrls = new Set();
+async function preloadStreamBytes(rawUrl, isHls = false) {
+    if (!rawUrl || typeof rawUrl !== 'string') return;
+    if (preloadedStreamUrls.has(rawUrl)) return;
+    preloadedStreamUrls.add(rawUrl);
+    if (preloadedStreamUrls.size > 60) {
+        const oldest = preloadedStreamUrls.values().next().value;
+        preloadedStreamUrls.delete(oldest);
+    }
+
+    try {
+        let fetchUrl = rawUrl;
+        const bypass = shouldBypassProxy(rawUrl);
+        if (!bypass && CF_WORKER_URL && CF_WORKER_URL.trim() && !rawUrl.startsWith(CF_WORKER_URL)) {
+            fetchUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(rawUrl)}`;
+        }
+
+        if (isHls || rawUrl.includes('.m3u8')) {
+            await fetch(fetchUrl, {
+                method: 'GET',
+                mode: 'cors',
+                credentials: 'omit',
+                cache: 'default'
+            });
+        } else {
+            await fetch(fetchUrl, {
+                method: 'GET',
+                mode: 'cors',
+                credentials: 'omit',
+                headers: { Range: 'bytes=0-262143' },
+                cache: 'default'
+            });
+        }
+    } catch (_) {
+        // Preload is purely opportunistic, ignore network aborts
+    }
+}
+
+/**
+ * Concurrently preload next episode stream data and initial segments for zero-delay switching
+ */
+async function preloadNextEpisodeStream(drama, nextEpNum) {
+    if (!drama || !nextEpNum) return;
+    const maxEp = (PlayerState.episodes && PlayerState.episodes.length) || drama.episodes || 100;
+    if (nextEpNum > maxEp) return;
+
+    const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+    if (StreamCache.has(dramaKey)) {
+        const cached = StreamCache.get(dramaKey);
+        if (cached && cached.episodes) {
+            const nextEpObj = cached.episodes.find(e => Number(e.number) === nextEpNum);
+            if (nextEpObj && nextEpObj.playUrl) {
+                preloadStreamBytes(nextEpObj.playUrl, nextEpObj.isHls);
+                return;
+            }
+        }
+    }
+
+    const nextWatchUrl = getEpisodeWatchUrl(drama.url, nextEpNum);
+    if (!nextWatchUrl || nextWatchUrl.includes('/search/import')) return;
+
+    try {
+        const { html } = await fetchFastHtml(nextWatchUrl);
+        if (!PlayerState.isOpen) return;
+        const streamData = DramaParser.extractStreamData(html, nextWatchUrl);
+        if (streamData) {
+            if (streamData.episodes && streamData.episodes.length > 0) {
+                StreamCache.set(dramaKey, streamData);
+                const nextEpObj = streamData.episodes.find(e => Number(e.number) === nextEpNum);
+                const url = (nextEpObj && nextEpObj.playUrl) || streamData.streamUrl;
+                if (url) {
+                    preloadStreamBytes(url, streamData.isHls);
+                }
+            } else if (streamData.streamUrl) {
+                preloadStreamBytes(streamData.streamUrl, streamData.isHls);
+            }
+        }
+    } catch (_) {}
+}
+
+/**
  * Load and play a stream URL (.m3u8 or .mp4) in HTML5 video using adaptive Hls.js
  */
-function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null, isSeamless = false) {
+function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null, isSeamless = false, sessionId = null) {
+    if (!PlayerState.isOpen) return;
+    if (sessionId && sessionId !== PlayerState.playSessionId) return;
+
     if (!streamUrl || typeof streamUrl !== 'string' || /^file:/i.test(streamUrl.trim()) || streamUrl.includes('file:///')) {
         showPlayerError('No valid video stream URL found for this episode.');
         return;
@@ -5010,18 +5136,13 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     }
 
     // Detect stream format BEFORE wrapping in CF_WORKER_URL
-    // (because Worker wrapping encodes the URL inside a query param like ?url=... which masks file extensions)
     const cleanRawUrl = (streamUrl || '').split('?')[0].toLowerCase();
     const isExplicitM3u8 = cleanRawUrl.endsWith('.m3u8') || cleanRawUrl.endsWith('.m3u') || (streamUrl || '').toLowerCase().includes('.m3u8');
     const isExplicitMp4 = cleanRawUrl.endsWith('.mp4') || cleanRawUrl.endsWith('.webm') || cleanRawUrl.endsWith('.m4v') || (streamUrl || '').toLowerCase().includes('.mp4');
 
-    // ONLY treat as HLS if it's explicitly an M3U8 playlist or flagged as HLS AND NOT an MP4 file.
-    // Hls.js is strictly for HLS (.m3u8) playlists — feeding an MP4 into Hls.js causes
-    // manifestParsingError, canceled transfers, and NS_ERROR_NET_PARTIAL_TRANSFER.
     const isHls = !isExplicitMp4 && (isExplicitM3u8 || isHlsHint);
 
     // Route stream URL through CF Worker when configured, UNLESS host is in EXCLUDED_PROXY_HOSTS
-    // (e.g. volcengine-forward.shorttv.live has its own auth_key / CORS and rejects worker proxying)
     const bypassProxy = shouldBypassProxy(streamUrl);
     if (!bypassProxy && CF_WORKER_URL && CF_WORKER_URL.trim() && streamUrl && !streamUrl.startsWith(CF_WORKER_URL)) {
         const workerBase = CF_WORKER_URL.replace(/\/$/, '');
@@ -5033,7 +5154,13 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     PlayerState.currentStreamExp = streamExp;
 
     const videoEl = elements.playerVideoElement;
-    if (!videoEl) return;
+    if (!videoEl || !PlayerState.isOpen) return;
+
+    // Maintain user sound preference across episodes and swipes
+    const userWantsMute = PlayerState.userPrefersMuted === true;
+    videoEl.muted = userWantsMute;
+    PlayerState.isMuted = userWantsMute;
+    updateMuteButtonUI();
 
     // Reset scrub bar displays for new stream
     if (elements.playerScrubProgress) elements.playerScrubProgress.style.width = '0%';
@@ -5052,12 +5179,8 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     videoEl.setAttribute('webkit-playsinline', '');
     videoEl.setAttribute('x5-playsinline', '');
     if (!isSeamless) {
-        // Only hard-reset src on non-seamless loads to avoid the black/poster flash
-        // between auto-next episodes. The new src assignment below is sufficient.
         videoEl.pause();
         videoEl.removeAttribute('src');
-        // Note: Do NOT suppress referrerpolicy here — CDN (hakunaymatata.com) requires
-        // a Referer header to be present. Sending no-referrer causes HTTP 428 errors.
         videoEl.load();
     }
 
@@ -5086,6 +5209,11 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
         // Direct MP4 / WebM / native HTML5 video
         loadNativeVideo(streamUrl, videoEl, false);
     }
+
+    // Preload next episode stream concurrently for zero-delay switching!
+    if (PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
+        preloadNextEpisodeStream(PlayerState.currentDrama, PlayerState.currentEpisodeNumber + 1);
+    }
 }
 
 /**
@@ -5106,9 +5234,16 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
         enableWorker: Boolean(window.Worker),
         lowLatencyMode: false,
         backBufferLength: 30,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        maxBufferLength: 25,
+        maxMaxBufferLength: 45,
         maxBufferSize: 30 * 1000 * 1000,
+        fragLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: 15000,
+        levelLoadingTimeOut: 15000,
+        fragLoadingMaxRetry: 3,
+        fragLoadingRetryDelay: 800,
+        manifestLoadingMaxRetry: 3,
+        manifestLoadingRetryDelay: 800,
         xhrSetup: (xhr) => {
             xhr.withCredentials = false;
         }
@@ -5181,6 +5316,21 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
                 if (networkRetryCount === 0) {
                     networkRetryCount++;
                     hls.startLoad();
+                } else if (streamUrl.includes('?url=')) {
+                    try {
+                        const u = new URL(streamUrl);
+                        const rawUrl = u.searchParams.get('url');
+                        if (rawUrl) {
+                            const directUrl = decodeURIComponent(rawUrl);
+                            console.warn('[Player] Proxied HLS network error, retrying directly with:', directUrl);
+                            hls.destroy();
+                            PlayerState.hls = null;
+                            loadStreamInVideo(directUrl, true, streamKey, streamExp);
+                            return;
+                        }
+                    } catch (_) {}
+                    hls.destroy();
+                    loadNativeVideo(streamUrl, videoEl, false);
                 } else {
                     // Network retry exhausted — try native video player as last resort
                     hls.destroy();
@@ -5462,6 +5612,7 @@ function setupReelGestures() {
         if (e.target.closest('.reel-right-rail') || e.target.closest('.reel-top-bar') || e.target.closest('.reel-bottom-bar') || e.target.closest('.reel-episodes-sheet')) {
             return;
         }
+        restoreUserAudioIfBlocked();
         // Capture whether controls were hidden at the exact moment of touchstart
         PlayerState.controlsWereHiddenOnTouch = Boolean(
             elements.reelPlayerContainer && elements.reelPlayerContainer.classList.contains('controls-hidden')
@@ -5475,6 +5626,7 @@ function setupReelGestures() {
         if (e.target.closest('.reel-right-rail') || e.target.closest('.reel-top-bar') || e.target.closest('.reel-bottom-bar') || e.target.closest('.reel-episodes-sheet')) {
             return;
         }
+        restoreUserAudioIfBlocked();
         const diffY = e.changedTouches[0].clientY - PlayerState.touchStartY;
         const diffX = e.changedTouches[0].clientX - PlayerState.touchStartX;
         const elapsed = Date.now() - PlayerState.touchStartTime;
@@ -5572,6 +5724,7 @@ function resetPlayerControlsTimer() {
  * Handle screen tap -> show controls if hidden, or toggle Play/Pause if already visible
  */
 function handleScreenTap(e) {
+    restoreUserAudioIfBlocked();
     const controlsHidden = (elements.reelPlayerContainer &&
         elements.reelPlayerContainer.classList.contains('controls-hidden')) ||
         Boolean(PlayerState.controlsWereHiddenOnTouch);
@@ -5600,11 +5753,7 @@ function togglePlayPause() {
     const videoEl = elements.playerVideoElement;
     if (!videoEl) return;
 
-    // If audio was muted due to browser autoplay restriction, tapping immediately unmutes
-    if (videoEl.muted) {
-        videoEl.muted = false;
-        PlayerState.isMuted = false;
-    }
+    restoreUserAudioIfBlocked();
 
     if (videoEl.paused) {
         videoEl.play().catch(() => {});
@@ -5641,6 +5790,8 @@ function triggerReelSwipeTransition(direction, callback) {
     const videoEl = elements.playerVideoElement;
     const backdropEl = elements.reelBackdrop;
 
+    restoreUserAudioIfBlocked();
+
     if (!videoEl || isSwipeAnimating) {
         if (typeof callback === 'function') callback();
         return;
@@ -5651,17 +5802,23 @@ function triggerReelSwipeTransition(direction, callback) {
     const exitY = isUp ? '-100%' : '100%';
     const enterY = isUp ? '100%' : '-100%';
 
-    // 1. Smoothly slide the current video out
-    videoEl.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s ease';
-    if (backdropEl) backdropEl.style.transition = 'opacity 0.2s ease';
+    // Execute callback IMMEDIATELY so stream resolution/playback kicks off concurrently without delay
+    if (typeof callback === 'function') {
+        try {
+            callback();
+        } catch (err) {
+            console.error('[Swipe Transition Callback Error]:', err);
+        }
+    }
+
+    // 1. Smoothly slide current video out
+    videoEl.style.transition = 'transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.15s ease';
+    if (backdropEl) backdropEl.style.transition = 'opacity 0.16s ease';
     videoEl.style.transform = `translateY(${exitY})`;
     videoEl.style.opacity = '0.35';
     if (backdropEl) backdropEl.style.opacity = '0.3';
 
     setTimeout(() => {
-        // Trigger video source change while video is offscreen
-        if (typeof callback === 'function') callback();
-
         // 2. Position incoming video at opposite side
         videoEl.style.transition = 'none';
         videoEl.style.transform = `translateY(${enterY})`;
@@ -5672,8 +5829,8 @@ function triggerReelSwipeTransition(direction, callback) {
 
         // 3. Smoothly slide incoming video into center view
         requestAnimationFrame(() => {
-            videoEl.style.transition = 'transform 0.28s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease';
-            if (backdropEl) backdropEl.style.transition = 'opacity 0.28s ease';
+            videoEl.style.transition = 'transform 0.20s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease';
+            if (backdropEl) backdropEl.style.transition = 'opacity 0.20s ease';
             videoEl.style.transform = 'translateY(0)';
             videoEl.style.opacity = '1';
             if (backdropEl) backdropEl.style.opacity = '1';
@@ -5687,9 +5844,9 @@ function triggerReelSwipeTransition(direction, callback) {
                     backdropEl.style.opacity = '';
                 }
                 isSwipeAnimating = false;
-            }, 300);
+            }, 220);
         });
-    }, 220);
+    }, 160);
 }
 
 /**
@@ -5743,20 +5900,37 @@ function toggleLike() {
 }
 
 /**
- * Audio Mute Toggle
+ * Audio Mute UI & Controller
  */
+function updateMuteButtonUI() {
+    const videoEl = elements.playerVideoElement;
+    const isMuted = videoEl ? videoEl.muted : Boolean(PlayerState.userPrefersMuted);
+    if (elements.playerMuteIcon) {
+        elements.playerMuteIcon.textContent = isMuted ? '🔇' : '🔊';
+    }
+    if (elements.playerMuteLabel) {
+        elements.playerMuteLabel.textContent = isMuted ? 'Muted' : 'Sound';
+    }
+}
+
+function restoreUserAudioIfBlocked() {
+    const videoEl = elements.playerVideoElement;
+    if (!videoEl || PlayerState.userPrefersMuted === true) return;
+    if (videoEl.muted) {
+        videoEl.muted = false;
+        PlayerState.isMuted = false;
+        updateMuteButtonUI();
+    }
+}
+
 function toggleMute() {
     const videoEl = elements.playerVideoElement;
     if (!videoEl) return;
-    videoEl.muted = !videoEl.muted;
-    PlayerState.isMuted = videoEl.muted;
-
-    if (elements.playerMuteIcon) {
-        elements.playerMuteIcon.textContent = videoEl.muted ? '🔇' : '🔊';
-    }
-    if (elements.playerMuteLabel) {
-        elements.playerMuteLabel.textContent = videoEl.muted ? 'Muted' : 'Sound';
-    }
+    const newMuted = !videoEl.muted;
+    videoEl.muted = newMuted;
+    PlayerState.userPrefersMuted = newMuted;
+    PlayerState.isMuted = newMuted;
+    updateMuteButtonUI();
 }
 
 /**
@@ -6020,6 +6194,9 @@ function showPlayerError(msg) {
  * Close streaming player and cleanup
  */
 function closePlayer() {
+    PlayerState.isOpen = false;
+    PlayerState.playSessionId = (PlayerState.playSessionId || 0) + 1;
+    PlayerState.isPlaying = false;
     showPlayerBuffering(false);
     closeEpisodesSheet();
     closeSheetRangeMenu();
@@ -6032,13 +6209,19 @@ function closePlayer() {
         elements.reelPlayerContainer.classList.remove('controls-hidden');
     }
     if (PlayerState.hls) {
-        PlayerState.hls.destroy();
+        try {
+            PlayerState.hls.stopLoad();
+            PlayerState.hls.detachMedia();
+            PlayerState.hls.destroy();
+        } catch (_) {}
         PlayerState.hls = null;
     }
     if (elements.playerVideoElement) {
-        elements.playerVideoElement.pause();
-        elements.playerVideoElement.removeAttribute('src');
-        elements.playerVideoElement.load();
+        try {
+            elements.playerVideoElement.pause();
+            elements.playerVideoElement.removeAttribute('src');
+            elements.playerVideoElement.load();
+        } catch (_) {}
     }
     // Clear playing state so the detail page no longer highlights any episode as active
     PlayerState.currentDrama = null;
