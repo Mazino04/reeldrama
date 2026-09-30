@@ -816,16 +816,14 @@
             </div>
             <div class="modal-body" style="display: flex; flex-direction: column; gap: 14px;">
                 <p style="color: var(--text-secondary); font-size: 13px; line-height: 1.5;">
-                    Direct fetch to narto-drama.com is tried first (no proxy). If blocked by CORS (GitHub Pages), the app automatically falls back to <strong>AllOrigins</strong> then <strong>CodeTabs</strong>. You can override this here.
+                    Requests and video streams are handled by your high-speed <strong>Cloudflare Worker</strong> proxy for universal CORS support, edge caching, and zero buffering delays.
                 </p>
                 <div>
                     <label style="display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
                         PROXY METHOD
                     </label>
                     <select class="sort-select" id="proxy-select" style="width: 100%; padding: 10px;">
-                        <option value="auto">Auto (Direct → AllOrigins → CodeTabs)</option>
-                        <option value="allorigins">AllOrigins only (allorigins.win)</option>
-                        <option value="codetabs">CodeTabs only (api.codetabs.com)</option>
+                        <option value="auto">Cloudflare Worker (Recommended)</option>
                         <option value="direct">Direct Fetch (no proxy — local / extension)</option>
                         <option value="custom">Custom Proxy URL</option>
                     </select>

@@ -246,7 +246,7 @@ async function processRequest(request, env, ctx) {
                 "500-599": 0
             }
         };
-    } else if (pathname.includes("/home/providers/sections") || pathname.includes("/search")) {
+    } else if ((pathname.includes("/home/providers/sections") || pathname.includes("/search")) && !pathname.includes("/search/import")) {
         fetchInit.cf = {
             cacheEverything: true,
             cacheTtlByStatus: {
@@ -260,6 +260,11 @@ async function processRequest(request, env, ctx) {
     }
 
     // Wire Client Abort Signal & Connection Timeout to Prevent Socket Exhaustion
+    const isImportOrScrape =
+        pathname.includes("/search/import") ||
+        pathname.includes("/detail/watch") ||
+        pathname.includes("/watch");
+
     const abortCtrl = new AbortController();
     if (request.signal) {
         request.signal.addEventListener("abort", () => {
@@ -267,8 +272,11 @@ async function processRequest(request, env, ctx) {
         });
     }
 
-    // Upstream handshake timeout: 25s for media, 12s for APIs
-    const timeoutMs = isMediaRequest ? 25000 : 12000;
+    // Upstream handshake timeout:
+    // - Media requests: 35s
+    // - Search/import & watch pages: 45s (remote provider scraping takes 15-25s)
+    // - Standard APIs / browse: 25s
+    const timeoutMs = isMediaRequest ? 35000 : (isImportOrScrape ? 45000 : 25000);
     const timeoutId = setTimeout(() => {
         try { abortCtrl.abort(); } catch (_) {}
     }, timeoutMs);
@@ -279,7 +287,7 @@ async function processRequest(request, env, ctx) {
         response = await fetch(parsed.href, fetchInit);
 
         // Retry search/import if upstream scraping gave initial 502/504
-        if ((response.status === 502 || response.status === 504) && pathname.includes('/search/import')) {
+        if ((response.status === 502 || response.status === 504) && isImportOrScrape && !abortCtrl.signal.aborted) {
             await new Promise(r => setTimeout(r, 1500));
             response = await fetch(parsed.href, fetchInit);
         }

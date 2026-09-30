@@ -235,9 +235,6 @@ function formatPosterUrl(rawUrl) {
     if (typeof CF_WORKER_URL === 'string' && CF_WORKER_URL.trim() && url.startsWith(CF_WORKER_URL)) {
         return url;
     }
-    if (url.includes('allorigins.win') || url.includes('codetabs.com')) {
-        return url;
-    }
 
     // 4. If it's targeting narto-drama.com (e.g. /assets/poster/...),
     // route it cleanly ONCE through the Cloudflare Worker proxy
@@ -3205,7 +3202,7 @@ async function fetchFastJson(targetUrl) {
             const res = await fetchWithTimeout(proxyUrl, {
                 mode: 'cors',
                 headers: proxyHeaders,
-                timeout: 15000
+                timeout: 25000
             });
             if (res.ok) {
                 return await res.json();
@@ -3215,7 +3212,7 @@ async function fetchFastJson(targetUrl) {
         }
     }
 
-    // 2. Direct fetch fallback (used if proxyMethod === 'direct' or worker is unreachable)
+    // 2. Direct fetch fallback (used if proxyMethod === 'direct' or on local server)
     try {
         const directHeaders = {
             'Accept': 'application/json, text/plain, */*'
@@ -3224,7 +3221,7 @@ async function fetchFastJson(targetUrl) {
             mode: 'cors',
             credentials: 'include',
             headers: directHeaders,
-            timeout: 8000
+            timeout: 10000
         });
         if (res.ok) {
             return await res.json();
@@ -3233,18 +3230,7 @@ async function fetchFastJson(targetUrl) {
         console.warn('[Direct Fetch Error]:', directErr.message);
     }
 
-    // 3. Fallback to AllOrigins / CodeTabs if configured
-    if (AppState.proxyMethod === 'allorigins' || AppState.proxyMethod === 'auto') {
-        try {
-            const res = await fetchWithTimeout(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, {
-                mode: 'cors',
-                timeout: 10000
-            });
-            if (res.ok) return await res.json();
-        } catch (_) {}
-    }
-
-    throw new Error('Failed to fetch from endpoint (CORS or network error).');
+    throw new Error('Failed to fetch from endpoint via Cloudflare Worker proxy.');
 }
 
 /**
@@ -3444,51 +3430,26 @@ async function fetchFastHtml(targetUrl) {
 
     // ─── 2. Force-direct mode ────────────────────────────────────────────────
     if (method === 'direct') {
-        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: 10000 });
-        DetailCache.set(targetUrl, text);
-        return { html: text, source: 'Direct' };
+        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: 15000 });
+        if (isValidDramaHtml(text)) {
+            DetailCache.set(targetUrl, text);
+            return { html: text, source: 'Direct' };
+        }
     }
 
-    // ─── 3. allorigins single-method ─────────────────────────────────────────
-    if (method === 'allorigins') {
-        // raw endpoint
-        try {
-            const text = await tryFetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
-            if (isValidDramaHtml(text)) { DetailCache.set(targetUrl, text); return { html: text, source: 'AllOrigins Raw' }; }
-        } catch (_) { /* try json fallback */ }
-        // json endpoint (different server infrastructure)
-        const data = await tryFetchJson(`https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
-        if (!data || !data.contents || !isValidDramaHtml(data.contents)) throw new Error('AllOrigins returned invalid content');
-        DetailCache.set(targetUrl, data.contents);
-        return { html: data.contents, source: 'AllOrigins JSON' };
-    }
-
-    // ─── 4. codetabs single-method ───────────────────────────────────────────
-    if (method === 'codetabs') {
-        const text = await tryFetch(`https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`, { timeout: 15000 });
-        if (!isValidDramaHtml(text)) throw new Error('CodeTabs returned invalid content');
-        DetailCache.set(targetUrl, text);
-        return { html: text, source: 'CodeTabs' };
-    }
-
-    // ─── 5. AUTO mode: sequential waterfall ──────────────────────────────────
-    //
-    // Tries each source in order. As soon as one succeeds, we stop.
-    // Errors are collected silently — only logged if ALL fail.
-    //
-    const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // ─── 3. Cloudflare Worker (Primary Dedicated Proxy) ──────────────────────
+    const isImport = targetUrl.includes('/search/import');
+    const fetchTimeout = isImport ? 45000 : 25000;
     const errors = [];
 
-    // Step A: Cloudflare Worker (your own proxy — zero CORS issues, most reliable)
-    // Only runs if CF_WORKER_URL is configured at the top of this file.
     if (CF_WORKER_URL && CF_WORKER_URL.trim()) {
         try {
             const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
-            let text = await tryFetch(workerUrl, { timeout: 20000 });
-            if (!isValidDramaHtml(text) && targetUrl.includes('/search/import')) {
+            let text = await tryFetch(workerUrl, { timeout: fetchTimeout });
+            if (!isValidDramaHtml(text) && isImport) {
                 // Wait 2s and retry as Narto Drama finishes on-demand scrape
                 await new Promise(r => setTimeout(r, 2000));
-                text = await tryFetch(workerUrl, { timeout: 20000 });
+                text = await tryFetch(workerUrl, { timeout: fetchTimeout });
             }
             if (isValidDramaHtml(text)) {
                 DetailCache.set(targetUrl, text);
@@ -3496,11 +3457,11 @@ async function fetchFastHtml(targetUrl) {
             }
             errors.push('CF Worker: invalid content');
         } catch (e) {
-            if (targetUrl.includes('/search/import')) {
+            if (isImport) {
                 try {
                     await new Promise(r => setTimeout(r, 2000));
                     const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
-                    const text = await tryFetch(workerUrl, { timeout: 20000 });
+                    const text = await tryFetch(workerUrl, { timeout: 45000 });
                     if (isValidDramaHtml(text)) {
                         DetailCache.set(targetUrl, text);
                         return { html: text, source: 'CF Worker (Retry)' };
@@ -3511,71 +3472,17 @@ async function fetchFastHtml(targetUrl) {
         }
     }
 
-    // For /search/import URLs or narto-drama session endpoints, NEVER fall back to public proxies!
-    // Public proxies (AllOrigins, CodeTabs) lack session cookies, reject POSTs/imports, and throw 503 CORS errors.
-    if (targetUrl.includes('/search/import')) {
-        throw new Error(`Import timed out or failed on upstream provider: ${errors.join(' | ')}`);
-    }
-
-    // Step B: Direct fetch — no proxy. Fast-fail (3s) to avoid blocking.
-    // Works on localhost or if narto-drama.com ever adds CORS headers.
+    // ─── 4. Direct fetch fallback (Localhost or unblocked network) ────────────
     try {
-        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: isLocalhost ? 5000 : 3000 });
+        const text = await tryFetch(targetUrl, { mode: 'cors', timeout: 5000 });
         if (isValidDramaHtml(text)) {
             DetailCache.set(targetUrl, text);
             return { html: text, source: 'Direct' };
         }
-    } catch (_) {
-        errors.push('Direct: CORS blocked or timeout');
-    }
-
-    // Step B: AllOrigins raw endpoint
-    try {
-        const text = await tryFetch(
-            `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
-            { timeout: 15000 }
-        );
-        if (isValidDramaHtml(text)) {
-            DetailCache.set(targetUrl, text);
-            return { html: text, source: 'AllOrigins Raw' };
-        }
-        errors.push('AllOrigins Raw: invalid content');
-    } catch (e) {
-        errors.push(`AllOrigins Raw: ${e.message}`);
-    }
-
-    // Step C: AllOrigins JSON endpoint (different infrastructure than /raw)
-    try {
-        const data = await tryFetchJson(
-            `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`,
-            { timeout: 15000 }
-        );
-        if (data && data.contents && isValidDramaHtml(data.contents)) {
-            DetailCache.set(targetUrl, data.contents);
-            return { html: data.contents, source: 'AllOrigins JSON' };
-        }
-        errors.push('AllOrigins JSON: invalid content');
-    } catch (e) {
-        errors.push(`AllOrigins JSON: ${e.message}`);
-    }
-
-    // Step D: CodeTabs
-    try {
-        const text = await tryFetch(
-            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
-            { timeout: 15000 }
-        );
-        if (isValidDramaHtml(text)) {
-            DetailCache.set(targetUrl, text);
-            return { html: text, source: 'CodeTabs' };
-        }
-        errors.push('CodeTabs: invalid content');
-    } catch (e) {
-        errors.push(`CodeTabs: ${e.message}`);
-    }
+    } catch (_) {}
 
     // All routes exhausted
-    throw new Error(`All fetch attempts failed. Try again or check your connection.\n${errors.join(' | ')}`);
+    throw new Error(`Failed to fetch drama page via Cloudflare Worker: ${errors.join(' | ')}`);
 }
 
 /**
@@ -4150,15 +4057,13 @@ async function openDramaDetailPage(item, cardEl = null) {
     // Graceful fallback: Generate episode links from URL pattern
     if (elements.detailEpisodesLoading) elements.detailEpisodesLoading.style.display = 'none';
     const totalEps = item.episodes || 60;
-    let cleanBase = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
-    if (cleanBase.includes('/search/import')) {
-        const dramaSlug = item.id || (item.title ? item.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'drama');
-        cleanBase = `https://narto-drama.com/detail/watch/${dramaSlug}`;
-    }
     const activeLang = AppState.currentLang || 'en-US';
+    const isImportUrl = (item.url || '').includes('/search/import');
+    let cleanBase = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+
     const fallbackList = Array.from({ length: totalEps }, (_, i) => ({
         number: `EP ${i + 1}`,
-        url: `${cleanBase}/${i + 1}?lang=${encodeURIComponent(activeLang)}`
+        url: isImportUrl ? item.url : `${cleanBase}/${i + 1}?lang=${encodeURIComponent(activeLang)}`
     }));
 
     item.episodeList = fallbackList;
@@ -4582,29 +4487,56 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
         try {
             const { html: importHtml } = await fetchFastHtml(cleanWatchUrl);
             if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+
+            // 1. Direct stream extraction from the imported watch page HTML
+            const directStreamData = DramaParser.extractStreamData(importHtml, cleanWatchUrl);
             const detailData = DramaParser.parseEpisodesFromDetailPage(importHtml, 'https://narto-drama.com');
+
             if (detailData.canonicalUrl) {
                 drama.url = detailData.canonicalUrl;
             }
             if (detailData.episodeList && detailData.episodeList.length > 0) {
                 drama.episodeList = detailData.episodeList;
                 PlayerState.episodes = detailData.episodeList;
+                renderEpisodesSheet(PlayerState.episodes, epNum);
                 const foundEp = detailData.episodeList.find(e => Number(e.number) === epNum) || detailData.episodeList[0];
-                if (foundEp && foundEp.url) {
+                if (foundEp && foundEp.url && !foundEp.url.includes('/search/import')) {
                     cleanWatchUrl = foundEp.url;
                 }
             } else if (detailData.canonicalUrl) {
                 cleanWatchUrl = getEpisodeWatchUrl(detailData.canonicalUrl, epNum);
             }
-        } catch (_) {
-            const dramaSlug = drama.id || (drama.title ? drama.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'drama');
-            cleanWatchUrl = `https://narto-drama.com/detail/watch/${dramaSlug}/${epNum}?lang=${encodeURIComponent(AppState.currentLang || 'en-US')}`;
+            PlayerState.currentEpisodeUrl = cleanWatchUrl;
+
+            // 2. If the imported page already contains the stream, play it immediately!
+            if (directStreamData && (directStreamData.streamUrl || (directStreamData.episodes && directStreamData.episodes.length > 0))) {
+                const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+                if (dramaKey) StreamCache.set(dramaKey, directStreamData);
+                if (directStreamData.episodes && directStreamData.episodes.length > 0) {
+                    PlayerState.episodes = directStreamData.episodes;
+                    renderEpisodesSheet(PlayerState.episodes, epNum);
+                }
+                const activeEp = (directStreamData.episodes || []).find(e => Number(e.number) === epNum);
+                const targetUrl = (activeEp && activeEp.playUrl) || directStreamData.streamUrl;
+                const targetKey = (activeEp && activeEp.key) || directStreamData.key || null;
+                const targetExp = (activeEp && activeEp.exp) || directStreamData.exp || null;
+                if (targetUrl) {
+                    loadStreamInVideo(targetUrl, directStreamData.isHls, targetKey, targetExp, isSeamless, currentSession);
+                    return;
+                }
+            }
+        } catch (importErr) {
+            console.error('[Import Error]:', importErr.message);
+            if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+            showPlayerError('Importing episode from provider timed out. Tap Retry to reconnect.');
+            return;
         }
+
         if (cleanWatchUrl.includes('/search/import')) {
-            const dramaSlug = drama.id || (drama.title ? drama.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') : 'drama');
-            cleanWatchUrl = `https://narto-drama.com/detail/watch/${dramaSlug}/${epNum}?lang=${encodeURIComponent(AppState.currentLang || 'en-US')}`;
+            if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+            showPlayerError('Could not extract video stream from provider import. Tap Retry to reconnect.');
+            return;
         }
-        PlayerState.currentEpisodeUrl = cleanWatchUrl;
     }
 
     if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
@@ -6440,7 +6372,7 @@ function showToast(message) {
  * Fetch with custom timeout
  */
 function fetchWithTimeout(resource, options = {}) {
-    const { timeout = 12000 } = options;
+    const { timeout = 25000 } = options;
     const controller = new AbortController();
     const id = setTimeout(() => {
         try {

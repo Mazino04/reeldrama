@@ -8,7 +8,7 @@
 // ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
 // Changing this string forces all clients to delete the old cache and
 // re-fetch every asset fresh from the network on their next visit.
-const CACHE_VERSION = 'v70-' + '2026-09-30-always-default-to-anyreel';
+const CACHE_VERSION = 'v72-' + '2026-09-30-exclusive-cf-worker-proxy-and-book-id-url-fix';
 const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
