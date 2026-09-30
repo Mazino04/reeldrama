@@ -38,16 +38,23 @@ function shouldBypassProxy(url) {
 
 // Allowed Short Drama Providers (9 Dedicated Providers - Alphabetical)
 const ALLOWED_PROVIDERS = [
-    { key: 'anyreel', label: 'AnyReel', icon: '🎞️' },
-    { key: 'bibishort', label: 'BibiShort', icon: '🐝' },
-    { key: 'dramabox', label: 'DramaBox', icon: '📦' },
-    { key: 'dramashorts', label: 'DramaShorts', icon: '🎬' },
-    { key: 'dramawave', label: 'DramaWave', icon: '🌊' },
-    { key: 'flickreels', label: 'FlickReels', icon: '🍿' },
-    { key: 'goodshort', label: 'GoodShort', icon: '✨' },
-    { key: 'netshort', label: 'NetShort', icon: '🌐' },
-    { key: 'reelshort', label: 'ReelShort', icon: '⚡' }
+    { key: 'anyreel', label: 'AnyReel', logo: 'icons/providers/anyreel.png', icon: 'icons/providers/anyreel.png' },
+    { key: 'bibishort', label: 'BibiShort', logo: 'icons/providers/bibishort.png', icon: 'icons/providers/bibishort.png' },
+    { key: 'dramabox', label: 'DramaBox', logo: 'icons/providers/dramabox.png', icon: 'icons/providers/dramabox.png' },
+    { key: 'dramashorts', label: 'DramaShorts', logo: 'icons/providers/dramashorts.png', icon: 'icons/providers/dramashorts.png' },
+    { key: 'dramawave', label: 'DramaWave', logo: 'icons/providers/dramawave.png', icon: 'icons/providers/dramawave.png' },
+    { key: 'flickreels', label: 'FlickReels', logo: 'icons/providers/flickreels.png', icon: 'icons/providers/flickreels.png' },
+    { key: 'goodshort', label: 'GoodShort', logo: 'icons/providers/goodshort.png', icon: 'icons/providers/goodshort.png' },
+    { key: 'netshort', label: 'NetShort', logo: 'icons/providers/netshort.png', icon: 'icons/providers/netshort.png' },
+    { key: 'reelshort', label: 'ReelShort', logo: 'icons/providers/reelshort.png', icon: 'icons/providers/reelshort.png' }
 ];
+
+function getProviderLogo(key) {
+    if (!key) return 'icons/providers/anyreel.png';
+    const clean = String(key).trim().toLowerCase();
+    const found = ALLOWED_PROVIDERS.find(p => p.key === clean || p.label.toLowerCase() === clean);
+    return found ? found.logo : 'icons/providers/anyreel.png';
+}
 
 // Bookmark Button Icons (Filled for saved/My List, Outline for unsaved)
 const ICON_BOOKMARK_OUTLINE_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`;
@@ -3779,7 +3786,10 @@ function createAnimeCardHtml(item, index, isBookmarkView = false) {
                 <h3 class="card-title" title="${title}">${title}</h3>
                 <div class="card-meta-line">
                     <div class="card-meta-info">
-                        <span class="card-provider-pill">${escapeHtml(providerName)}</span>
+                        <span class="card-provider-pill">
+                            <img class="card-provider-logo" src="${getProviderLogo(providerName)}" alt="" width="13" height="13" loading="lazy">
+                            <span>${escapeHtml(providerName)}</span>
+                        </span>
                         <span class="card-dot-sep">·</span>
                         <span class="card-progress-text">HD Quality</span>
                     </div>
@@ -3950,7 +3960,13 @@ async function openDramaDetailPage(item, cardEl = null) {
 
     // 4. Provider & Status Pills
     const providerName = getItemProviderName(item);
-    if (elements.detailProviderPill) elements.detailProviderPill.textContent = providerName;
+    if (elements.detailProviderPill) {
+        const logoUrl = getProviderLogo(providerName);
+        elements.detailProviderPill.innerHTML = `
+            <img class="detail-provider-logo" src="${logoUrl}" alt="" width="16" height="16">
+            <span>${escapeHtml(providerName)}</span>
+        `;
+    }
 
     // 5. Rating Value
     const ratingVal = getDramaRating(item.title || '');
@@ -4418,6 +4434,77 @@ function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
 }
 
 /**
+ * Attempt to dynamically resolve an episode stream from Narto Drama edge / refresh-source endpoint
+ * Returns { streamUrl, isHls, key, exp } or null if unavailable/delisted
+ */
+async function resolveDynamicRefreshSource(refreshContext, epNum, fallbackWatchUrl) {
+    if (!refreshContext || !refreshContext.token) return null;
+
+    try {
+        const rc = refreshContext;
+        let refreshUrl = '';
+        const baseTarget = rc.baseUrl || fallbackWatchUrl || 'https://narto-drama.com';
+        const targetObj = new URL(baseTarget, 'https://narto-drama.com');
+
+        // Remove trailing episode if present, then append /{epNum}/refresh-source
+        let cleanPath = targetObj.pathname.replace(/\/+$/, '').replace(/\/\d+$/, '');
+        cleanPath = `${cleanPath}/${Math.max(1, Number(epNum || 1))}/refresh-source`;
+        targetObj.pathname = cleanPath;
+        targetObj.searchParams.set('rs_ctx', rc.token);
+
+        if (rc.useEdge && rc.edgeBase) {
+            refreshUrl = rc.edgeBase.replace(/\/+$/, '') + '/e/rs' + targetObj.pathname + targetObj.search;
+        } else {
+            refreshUrl = targetObj.toString();
+        }
+
+        const proxyBase = CF_WORKER_URL ? CF_WORKER_URL.replace(/\/+$/, '') : '';
+        const fetchTarget = proxyBase ? `${proxyBase}/?url=${encodeURIComponent(refreshUrl)}` : refreshUrl;
+
+        const res = await fetchWithTimeout(fetchTarget, {
+            mode: 'cors',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            timeout: 15000
+        });
+
+        let payload = null;
+        try {
+            payload = await res.json();
+        } catch (_) {}
+
+        if (!res.ok || (payload && payload.ok === false)) {
+            console.warn('[Dynamic Source Unavailable]:', payload?.message || res.status);
+            return { unavailable: true, message: payload?.message || 'stream_temporarily_unavailable' };
+        }
+
+        if (payload) {
+            const rawUrl = (payload.play_url || payload.direct_play_url || '').trim();
+            if (rawUrl) {
+                const unwrapped = DramaParser.unwrapStreamUrl(rawUrl);
+                const finalUrl = unwrapped.streamUrl || rawUrl;
+                const finalKey = unwrapped.key || payload.key || null;
+                const finalExp = unwrapped.exp || payload.exp || null;
+                const isHls = (payload.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(finalUrl);
+                return {
+                    streamUrl: finalUrl,
+                    isHls,
+                    key: finalKey,
+                    exp: finalExp,
+                    subtitleUrl: payload.subtitle_url || '',
+                    unavailable: false
+                };
+            }
+        }
+    } catch (err) {
+        console.warn('[Dynamic Source Resolve Failed]:', err.message);
+    }
+    return null;
+}
+
+/**
  * Play an episode in our in-app TikTok-style streaming player
  */
 async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh = false, isSeamless = false) {
@@ -4426,6 +4513,10 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     PlayerState.isOpen = true;
     PlayerState.playSessionId = (PlayerState.playSessionId || 0) + 1;
     const currentSession = PlayerState.playSessionId;
+
+    // Immediately purge active media, abort in-flight fragments, reset scrub bar & show buffering
+    cleanupActiveVideoPlayback();
+    showPlayerBuffering(true);
 
     const epNum = parseInt(episodeNumber, 10) || 1;
     PlayerState.currentDrama = drama;
@@ -4472,10 +4563,6 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     initLikeStateForDrama(drama);
     updatePlayerBookmarkButton(drama);
 
-    if (!isSeamless) {
-        showPlayerBuffering(true);
-    }
-
     // Update Next / Prev buttons
     updatePlayerNavButtons();
 
@@ -4509,7 +4596,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             PlayerState.currentEpisodeUrl = cleanWatchUrl;
 
             // 2. If the imported page already contains the stream, play it immediately!
-            if (directStreamData && (directStreamData.streamUrl || (directStreamData.episodes && directStreamData.episodes.length > 0))) {
+            if (directStreamData && (directStreamData.streamUrl || (directStreamData.episodes && directStreamData.episodes.length > 0) || directStreamData.refreshContext)) {
                 const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
                 if (dramaKey) StreamCache.set(dramaKey, directStreamData);
                 if (directStreamData.episodes && directStreamData.episodes.length > 0) {
@@ -4517,11 +4604,37 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                     renderEpisodesSheet(PlayerState.episodes, epNum);
                 }
                 const activeEp = (directStreamData.episodes || []).find(e => Number(e.number) === epNum);
-                const targetUrl = (activeEp && activeEp.playUrl) || directStreamData.streamUrl;
-                const targetKey = (activeEp && activeEp.key) || directStreamData.key || null;
-                const targetExp = (activeEp && activeEp.exp) || directStreamData.exp || null;
+                let targetUrl = (activeEp && activeEp.playUrl) || directStreamData.streamUrl;
+                let targetKey = (activeEp && activeEp.key) || directStreamData.key || null;
+                let targetExp = (activeEp && activeEp.exp) || directStreamData.exp || null;
+                let targetIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : directStreamData.isHls;
+
+                if (!targetUrl && directStreamData.refreshContext) {
+                    const dynamicRes = await resolveDynamicRefreshSource(directStreamData.refreshContext, epNum, cleanWatchUrl);
+                    if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+                    if (dynamicRes) {
+                        if (dynamicRes.unavailable) {
+                            closePlayer();
+                            showToast('This episode is not available at this moment or has been removed');
+                            return;
+                        }
+                        if (dynamicRes.streamUrl) {
+                            targetUrl = dynamicRes.streamUrl;
+                            targetKey = dynamicRes.key;
+                            targetExp = dynamicRes.exp;
+                            targetIsHls = dynamicRes.isHls;
+                            if (activeEp) {
+                                activeEp.playUrl = targetUrl;
+                                activeEp.key = targetKey;
+                                activeEp.exp = targetExp;
+                                activeEp.isHls = targetIsHls;
+                            }
+                        }
+                    }
+                }
+
                 if (targetUrl) {
-                    loadStreamInVideo(targetUrl, directStreamData.isHls, targetKey, targetExp, isSeamless, currentSession);
+                    loadStreamInVideo(targetUrl, targetIsHls, targetKey, targetExp, isSeamless, currentSession);
                     return;
                 }
             }
@@ -4550,13 +4663,42 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             renderEpisodesSheet(PlayerState.episodes, epNum);
 
             const activeEp = cached.episodes.find(e => Number(e.number) === epNum);
-            if (activeEp && activeEp.playUrl) {
-                if (activeEp.exp && (activeEp.exp * 1000) < Date.now()) {
+            let activeUrl = (activeEp && activeEp.playUrl) || '';
+            let activeKey = (activeEp && activeEp.key) || null;
+            let activeExp = (activeEp && activeEp.exp) || null;
+            let activeIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : false;
+
+            if (!activeUrl && cached.refreshContext) {
+                const dynamicRes = await resolveDynamicRefreshSource(cached.refreshContext, epNum, cleanWatchUrl);
+                if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+                if (dynamicRes) {
+                    if (dynamicRes.unavailable) {
+                        closePlayer();
+                        showToast('This episode is not available at this moment or has been removed');
+                        return;
+                    }
+                    if (dynamicRes.streamUrl) {
+                        activeUrl = dynamicRes.streamUrl;
+                        activeKey = dynamicRes.key;
+                        activeExp = dynamicRes.exp;
+                        activeIsHls = dynamicRes.isHls;
+                        if (activeEp) {
+                            activeEp.playUrl = activeUrl;
+                            activeEp.key = activeKey;
+                            activeEp.exp = activeExp;
+                            activeEp.isHls = activeIsHls;
+                        }
+                    }
+                }
+            }
+
+            if (activeUrl) {
+                if (activeExp && (activeExp * 1000) < Date.now()) {
                     closePlayer();
                     showToast('This episode is not available at this moment or has been removed');
                     return;
                 }
-                loadStreamInVideo(activeEp.playUrl, activeEp.isHls, activeEp.key, activeEp.exp, isSeamless, currentSession);
+                loadStreamInVideo(activeUrl, activeIsHls, activeKey, activeExp, isSeamless, currentSession);
                 return;
             }
         }
@@ -4574,9 +4716,35 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             renderEpisodesSheet(PlayerState.episodes, epNum);
 
             const activeEp = streamData.episodes.find(e => Number(e.number) === epNum);
-            const targetUrl = (activeEp && activeEp.playUrl) || streamData.streamUrl;
-            const targetKey = (activeEp && activeEp.key) || streamData.key || null;
-            const targetExp = (activeEp && activeEp.exp) || streamData.exp || null;
+            let targetUrl = (activeEp && activeEp.playUrl) || streamData.streamUrl;
+            let targetKey = (activeEp && activeEp.key) || streamData.key || null;
+            let targetExp = (activeEp && activeEp.exp) || streamData.exp || null;
+            let targetIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : streamData.isHls;
+
+            // If seed-mode drama with empty playUrl, dynamically resolve stream
+            if (!targetUrl && streamData.refreshContext) {
+                const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, epNum, cleanWatchUrl);
+                if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+                if (dynamicRes) {
+                    if (dynamicRes.unavailable) {
+                        closePlayer();
+                        showToast('This episode is not available at this moment or has been removed');
+                        return;
+                    }
+                    if (dynamicRes.streamUrl) {
+                        targetUrl = dynamicRes.streamUrl;
+                        targetKey = dynamicRes.key;
+                        targetExp = dynamicRes.exp;
+                        targetIsHls = dynamicRes.isHls;
+                        if (activeEp) {
+                            activeEp.playUrl = targetUrl;
+                            activeEp.key = targetKey;
+                            activeEp.exp = targetExp;
+                            activeEp.isHls = targetIsHls;
+                        }
+                    }
+                }
+            }
 
             if (targetExp && (targetExp * 1000) < Date.now()) {
                 closePlayer();
@@ -4585,7 +4753,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             }
 
             if (targetUrl) {
-                loadStreamInVideo(targetUrl, streamData.isHls, targetKey, targetExp, isSeamless, currentSession);
+                loadStreamInVideo(targetUrl, targetIsHls, targetKey, targetExp, isSeamless, currentSession);
                 return;
             }
         } else if (streamData.streamUrl) {
@@ -4596,15 +4764,30 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             }
             loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless, currentSession);
             return;
+        } else if (streamData.refreshContext) {
+            const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, epNum, cleanWatchUrl);
+            if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+            if (dynamicRes) {
+                if (dynamicRes.unavailable) {
+                    closePlayer();
+                    showToast('This episode is not available at this moment or has been removed');
+                    return;
+                }
+                if (dynamicRes.streamUrl) {
+                    loadStreamInVideo(dynamicRes.streamUrl, dynamicRes.isHls, dynamicRes.key, dynamicRes.exp, isSeamless, currentSession);
+                    return;
+                }
+            }
         }
 
-        // Stream URL could not be found
+        // Stream URL could not be found or was delisted
         if (PlayerState.isOpen && PlayerState.playSessionId === currentSession) {
-            showPlayerError('Video stream could not be extracted from this episode.');
+            closePlayer();
+            showToast('This episode is not available at this moment or has been removed');
         }
     } catch (err) {
         if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
-        if (err && (err.status === 410 || /410/.test(err.message))) {
+        if (err && (err.status === 404 || err.status === 410 || /404|410/.test(err.message))) {
             closePlayer();
             showToast('This episode is not available at this moment or has been removed');
             return;
@@ -5029,15 +5212,67 @@ async function preloadNextEpisodeStream(drama, nextEpNum) {
             if (streamData.episodes && streamData.episodes.length > 0) {
                 StreamCache.set(dramaKey, streamData);
                 const nextEpObj = streamData.episodes.find(e => Number(e.number) === nextEpNum);
-                const url = (nextEpObj && nextEpObj.playUrl) || streamData.streamUrl;
+                let url = (nextEpObj && nextEpObj.playUrl) || streamData.streamUrl;
+                if (!url && streamData.refreshContext) {
+                    const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, nextEpNum, nextWatchUrl);
+                    if (dynamicRes && dynamicRes.streamUrl) {
+                        url = dynamicRes.streamUrl;
+                        if (nextEpObj) {
+                            nextEpObj.playUrl = url;
+                            nextEpObj.isHls = dynamicRes.isHls;
+                            nextEpObj.key = dynamicRes.key;
+                            nextEpObj.exp = dynamicRes.exp;
+                        }
+                    }
+                }
                 if (url) {
                     preloadStreamBytes(url, streamData.isHls);
                 }
             } else if (streamData.streamUrl) {
                 preloadStreamBytes(streamData.streamUrl, streamData.isHls);
+            } else if (streamData.refreshContext) {
+                const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, nextEpNum, nextWatchUrl);
+                if (dynamicRes && dynamicRes.streamUrl) {
+                    preloadStreamBytes(dynamicRes.streamUrl, dynamicRes.isHls);
+                }
             }
         }
     } catch (_) {}
+}
+
+/**
+ * Fully purge active media, abort in-flight HLS fragment downloads, and reset progress indicators.
+ * Prevents frozen frames, decoder resource exhaustion, and dangling requests on midrange phones.
+ */
+function cleanupActiveVideoPlayback() {
+    PlayerState.isPlaying = false;
+    PlayerState.episodeMarkedWatched = false;
+
+    // 1. Immediately abort any in-flight HLS fragment downloads & detach media
+    if (PlayerState.hls) {
+        try {
+            PlayerState.hls.stopLoad();
+            PlayerState.hls.detachMedia();
+            PlayerState.hls.destroy();
+        } catch (_) {}
+        PlayerState.hls = null;
+    }
+
+    // 2. Immediately stop HTML5 video element & release hardware decoder frame buffer
+    const videoEl = elements.playerVideoElement;
+    if (videoEl) {
+        try {
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+        } catch (_) {}
+    }
+
+    // 3. Immediately reset scrub bar and time indicators to 0
+    if (elements.playerScrubProgress) elements.playerScrubProgress.style.width = '0%';
+    if (elements.playerScrubBuffered) elements.playerScrubBuffered.style.width = '0%';
+    if (elements.playerTimeCurrent) elements.playerTimeCurrent.textContent = '0:00';
+    if (elements.playerTimeTotal) elements.playerTimeTotal.textContent = '0:00';
 }
 
 /**
@@ -5088,33 +5323,21 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
     const videoEl = elements.playerVideoElement;
     if (!videoEl || !PlayerState.isOpen) return;
 
+    // Purge previous stream resources completely before starting the new stream
+    cleanupActiveVideoPlayback();
+
     // Maintain user sound preference across episodes and swipes
     const userWantsMute = PlayerState.userPrefersMuted === true;
     videoEl.muted = userWantsMute;
     PlayerState.isMuted = userWantsMute;
     updateMuteButtonUI();
 
-    // Reset scrub bar displays for new stream
-    if (elements.playerScrubProgress) elements.playerScrubProgress.style.width = '0%';
-    if (elements.playerScrubBuffered) elements.playerScrubBuffered.style.width = '0%';
-
-    // Reset previous HLS instance
-    if (PlayerState.hls) {
-        PlayerState.hls.destroy();
-        PlayerState.hls = null;
-    }
-
-    // Reset video element
+    // Reset video element & attributes
     videoEl.onerror = null;
     videoEl.removeAttribute('controls');
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
     videoEl.setAttribute('x5-playsinline', '');
-    if (!isSeamless) {
-        videoEl.pause();
-        videoEl.removeAttribute('src');
-        videoEl.load();
-    }
 
     // Set blurred backdrop poster if drama poster available
     if (elements.reelBackdrop && PlayerState.currentDrama?.poster) {
@@ -5389,7 +5612,7 @@ function setupVideoPlayerEvents() {
     });
 
     videoEl.ontimeupdate = () => {
-        if (!PlayerState.isDraggingScrub && videoEl.duration) {
+        if (!PlayerState.isDraggingScrub && videoEl.duration && PlayerState.isOpen && PlayerState.isPlaying) {
             const pct = (videoEl.currentTime / videoEl.duration) * 100;
             if (elements.playerScrubProgress) {
                 elements.playerScrubProgress.style.width = `${pct}%`;
@@ -5422,7 +5645,7 @@ function setupVideoPlayerEvents() {
     };
 
     videoEl.onprogress = () => {
-        if (videoEl.buffered.length > 0 && videoEl.duration) {
+        if (videoEl.buffered.length > 0 && videoEl.duration && PlayerState.isOpen && PlayerState.isPlaying) {
             const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
             const pct = (bufferedEnd / videoEl.duration) * 100;
             if (elements.playerScrubBuffered) {
@@ -5723,6 +5946,10 @@ function triggerReelSwipeTransition(direction, callback) {
     const backdropEl = elements.reelBackdrop;
 
     restoreUserAudioIfBlocked();
+
+    // Immediately stop active playback, abort in-flight fragment downloads, and reset scrub bar
+    cleanupActiveVideoPlayback();
+    showPlayerBuffering(true);
 
     if (!videoEl || isSwipeAnimating) {
         if (typeof callback === 'function') callback();
@@ -6140,21 +6367,7 @@ function closePlayer() {
     if (elements.reelPlayerContainer) {
         elements.reelPlayerContainer.classList.remove('controls-hidden');
     }
-    if (PlayerState.hls) {
-        try {
-            PlayerState.hls.stopLoad();
-            PlayerState.hls.detachMedia();
-            PlayerState.hls.destroy();
-        } catch (_) {}
-        PlayerState.hls = null;
-    }
-    if (elements.playerVideoElement) {
-        try {
-            elements.playerVideoElement.pause();
-            elements.playerVideoElement.removeAttribute('src');
-            elements.playerVideoElement.load();
-        } catch (_) {}
-    }
+    cleanupActiveVideoPlayback();
     // Clear playing state so the detail page no longer highlights any episode as active
     PlayerState.currentDrama = null;
     PlayerState.currentEpisodeNumber = null;

@@ -589,6 +589,27 @@ const DramaParser = (() => {
             if (epTitleMatch) currentEpisode = parseInt(epTitleMatch[1], 10);
         }
 
+        // Extract dynamic refreshSource context (used for seed-mode / edge-resolved streams)
+        let refreshContext = null;
+        const tokenMatch = htmlString.match(/(?:const|let|var)?\s*["']?refreshSourceContextToken["']?\s*[:=]\s*["']([^"']+)["']/i);
+        if (tokenMatch && tokenMatch[1]) {
+            const edgeBaseMatch = htmlString.match(/(?:const|let|var)?\s*["']?refreshSourceEdgeBase["']?\s*[:=]\s*["']([^"']+)["']/i);
+            const baseUrlMatch = htmlString.match(/(?:const|let|var)?\s*["']?refreshSourceBaseUrl["']?\s*[:=]\s*["']([^"']+)["']/i);
+            const useEdgeMatch = htmlString.match(/(?:const|let|var)?\s*["']?refreshSourceUseEdge["']?\s*[:=]\s*(true|false)/i);
+            const candyjarDirectMatch = htmlString.match(/(?:const|let|var)?\s*["']?refreshSourceCandyjarEdgeDirect["']?\s*[:=]\s*(true|false)/i);
+            const movieIdMatch = htmlString.match(/name=["']nd-current-movie-id["']\s+content=["']([^"']+)["']/i)
+                || htmlString.match(/nd-current-movie-id["']\s*content=["']([^"']+)["']/i);
+
+            refreshContext = {
+                token: cleanJsonUrl(tokenMatch[1]),
+                edgeBase: edgeBaseMatch ? cleanJsonUrl(edgeBaseMatch[1]) : 'https://edge.narto-drama.com',
+                baseUrl: baseUrlMatch ? cleanJsonUrl(baseUrlMatch[1]) : '',
+                useEdge: useEdgeMatch ? useEdgeMatch[1] === 'true' : true,
+                candyjarDirect: candyjarDirectMatch ? candyjarDirectMatch[1] === 'true' : false,
+                movieId: movieIdMatch ? movieIdMatch[1] : null
+            };
+        }
+
         // 1. Direct initialSourceUrl pattern: const initialSourceUrl = "https:\/\/..." or JSON key
         const initMatch = htmlString.match(/(?:const|let|var)?\s*["']?initialSourceUrl["']?\s*[:=]\s*["']([^"']+)["']/i)
             || htmlString.match(/(?:const|let|var)?\s*["']?(?:video_url|videoUrl|streamUrl|playUrl|stream_url)["']?\s*[:=]\s*["']([^"']+)["']/i);
@@ -681,7 +702,8 @@ const DramaParser = (() => {
             exp: streamExp,
             isHls,
             currentEpisode,
-            episodes
+            episodes,
+            refreshContext
         };
     }
 

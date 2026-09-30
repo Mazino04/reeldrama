@@ -8,7 +8,7 @@
 // ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
 // Changing this string forces all clients to delete the old cache and
 // re-fetch every asset fresh from the network on their next visit.
-const CACHE_VERSION = 'v72-' + '2026-09-30-exclusive-cf-worker-proxy-and-book-id-url-fix';
+const CACHE_VERSION = 'v75-' + '2026-09-30-dynamic-source-refresh-support';
 const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -29,6 +29,15 @@ const PRECACHE_ASSETS = [
     './icons/icon-512.png',
     './icons/icon-maskable-192.png',
     './icons/icon-maskable-512.png',
+    './icons/providers/anyreel.png',
+    './icons/providers/bibishort.png',
+    './icons/providers/dramabox.png',
+    './icons/providers/dramashorts.png',
+    './icons/providers/dramawave.png',
+    './icons/providers/flickreels.png',
+    './icons/providers/goodshort.png',
+    './icons/providers/netshort.png',
+    './icons/providers/reelshort.png',
     'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'
 ];
 
