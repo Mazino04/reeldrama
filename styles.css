@@ -854,7 +854,7 @@ html.no-splash .app-splash-screen {
 .nav-search-wrap {
     width: 100%;
     max-width: 680px;
-    margin: 20px auto 8px;
+    margin: 28px auto 8px;
     padding: 0 16px;
     box-sizing: border-box;
     display: flex;
@@ -5684,14 +5684,14 @@ body.modal-open {
         gap: 8px !important;
     }
 
-    /* Mobile Search Bar: Matches card section width and 10px edge padding */
+    /* Mobile Search Bar: Reverted to previous 12px padding with increased 32px margin-top */
     .site-search-bar-wrap,
     .nav-search-wrap {
         display: flex !important;
         width: 100% !important;
         max-width: 100% !important;
-        margin: 20px 0 6px 0 !important;
-        padding: 0 10px !important;
+        margin: 32px 0 6px 0 !important;
+        padding: 0 12px !important;
         box-sizing: border-box !important;
         position: static !important;
     }
