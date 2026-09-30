@@ -4073,7 +4073,7 @@ body.modal-open {
     }
 
     .hero-search-section {
-        padding: 0 16px;
+        padding: 0;
     }
 
     .search-submit-btn span {
@@ -5524,7 +5524,7 @@ body.modal-open {
         flex-direction: column !important;
         align-items: stretch !important;
         gap: 8px !important;
-        padding: 6px 12px 10px !important;
+        padding: 6px 10px 10px !important;
         margin-top: 4px !important;
         box-sizing: border-box !important;
         width: 100% !important;
@@ -5684,27 +5684,28 @@ body.modal-open {
         gap: 8px !important;
     }
 
-    /* Mobile Search Bar: Placed between top nav and provider rail, clean responsive margins */
+    /* Mobile Search Bar: Matches card section width and 10px edge padding */
     .site-search-bar-wrap,
     .nav-search-wrap {
         display: flex !important;
         width: 100% !important;
         max-width: 100% !important;
         margin: 10px 0 4px 0 !important;
-        padding: 0 12px !important;
+        padding: 0 10px !important;
         box-sizing: border-box !important;
         position: static !important;
     }
 
    .nav-search-form {
-    width: 92% !important;
+    width: 100% !important;
+    max-width: 100% !important;
     height: 45px !important;
     border-radius: var(--radius-pill) !important;
     background: rgba(255, 255, 255, 0.08) !important;
     border: 1px solid rgba(255, 255, 255, 0.18) !important;
     padding: 0 14px !important;
     box-sizing: border-box !important;
-    margin-top: 32px;
+    margin-top: 6px !important;
   }
 
     .nav-search-form .search-input {
@@ -5740,15 +5741,24 @@ body.modal-open {
         height: 36px !important;
     }
 
-    /* Provider Bar: 3x2 Grid Layout on Mobile (No horizontal scrolling) */
+    .hero-search-section {
+        padding: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 auto !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Provider Bar: Matches card section width and 10px edge padding */
     .unified-provider-bar-wrap {
         display: flex !important;
         flex-direction: column !important;
         align-items: stretch !important;
         justify-content: flex-start !important;
-        padding: 8px 12px 4px !important;
+        padding: 4px 10px 6px !important;
         margin: 4px 0 8px !important;
         width: 100% !important;
+        max-width: 100% !important;
         box-sizing: border-box !important;
         overflow-x: visible !important;
     }
