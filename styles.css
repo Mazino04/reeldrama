@@ -854,7 +854,7 @@ html.no-splash .app-splash-screen {
 .nav-search-wrap {
     width: 100%;
     max-width: 680px;
-    margin: 14px auto 6px;
+    margin: 20px auto 8px;
     padding: 0 16px;
     box-sizing: border-box;
     display: flex;
@@ -5690,7 +5690,7 @@ body.modal-open {
         display: flex !important;
         width: 100% !important;
         max-width: 100% !important;
-        margin: 10px 0 4px 0 !important;
+        margin: 20px 0 6px 0 !important;
         padding: 0 10px !important;
         box-sizing: border-box !important;
         position: static !important;
@@ -5705,7 +5705,7 @@ body.modal-open {
     border: 1px solid rgba(255, 255, 255, 0.18) !important;
     padding: 0 14px !important;
     box-sizing: border-box !important;
-    margin-top: 6px !important;
+    margin-top: 0 !important;
   }
 
     .nav-search-form .search-input {
