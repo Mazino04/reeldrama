@@ -47,9 +47,9 @@ const ALLOWED_PROVIDERS = [
     { key: 'freereels', label: 'FreeReels', logo: 'icons/providers/freereels.png', icon: 'icons/providers/freereels.png' },
     { key: 'goodshort', label: 'GoodShort', logo: 'icons/providers/goodshort.png', icon: 'icons/providers/goodshort.png' },
     { key: 'netshort', label: 'NetShort', logo: 'icons/providers/netshort.png', icon: 'icons/providers/netshort.png' },
+    { key: 'pinedrama', label: 'PineDrama', logo: 'icons/providers/pinedrama.png', icon: 'icons/providers/pinedrama.png' },
     { key: 'reelshort', label: 'ReelShort', logo: 'icons/providers/reelshort.png', icon: 'icons/providers/reelshort.png' },
-    { key: 'shortical', label: 'Shortical', logo: 'icons/providers/shortical.png', icon: 'icons/providers/shortical.png' },
-    { key: 'shortmax', label: 'ShortMax', logo: 'icons/providers/shortmax.png', icon: 'icons/providers/shortmax.png' }
+    { key: 'shortical', label: 'Shortical', logo: 'icons/providers/shortical.png', icon: 'icons/providers/shortical.png' }
 ];
 
 function getProviderLogo(key) {
@@ -307,7 +307,7 @@ const UserDataManager = {
         if (s === 'watch' || s === 'detail' || s === 'search' || s === 'import' || s === 'book' || s === 'drama') return true;
         if (s === '/search/import' || s === '/import' || s === '/search' || s === '/detail/watch' || s === '/watch') return true;
         if (s.startsWith('https://narto-drama.com') && (s.endsWith('/search/import') || s.endsWith('/search') || s.endsWith('/watch') || s.endsWith('/detail/watch') || s === 'https://narto-drama.com' || s === 'https://narto-drama.com/')) return true;
-        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'dramawave_' || s === 'anyreel_' || s === 'bibishort_' || s === 'flickreels_' || s === 'freereels_' || s === 'shortical_' || s === 'shortmax_') return true;
+        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'dramawave_' || s === 'anyreel_' || s === 'bibishort_' || s === 'flickreels_' || s === 'freereels_' || s === 'pinedrama_' || s === 'shortical_' || s === 'shortmax_') return true;
         return false;
     },
 
@@ -366,7 +366,7 @@ const UserDataManager = {
             keys.add(`book_${coreId.toLowerCase()}`);
             keys.add(`detail_${coreId.toLowerCase()}`);
 
-            const providers = ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'];
+            const providers = ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'];
             const targetProv = (typeof target === 'object' ? (target.provider || target.category_name) : '') || '';
             if (targetProv) {
                 const cleanProv = targetProv.toLowerCase().replace(/\s+/g, '');
@@ -414,7 +414,7 @@ const UserDataManager = {
                 const prov = record.provider.toLowerCase().replace(/\s+/g, '');
                 if (!this.isGenericIdentifier(prov)) aliases.add(`${prov}_${coreId}`);
             }
-            ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'].forEach(p => {
+            ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'].forEach(p => {
                 aliases.add(`${p}_${coreId}`);
             });
         }

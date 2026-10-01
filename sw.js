@@ -8,7 +8,7 @@
 // ─── BUMP THIS VERSION ON EVERY DEPLOY ───────────────────────────────────────
 // Changing this string forces all clients to delete the old cache and
 // re-fetch every asset fresh from the network on their next visit.
-const CACHE_VERSION = 'v80-' + '2026-10-01-add-shortmax-shortical-freereels';
+const CACHE_VERSION = 'v81-' + '2026-10-01-replace-shortmax-with-pinedrama';
 const CACHE_NAME = `reeldrama-cache-${CACHE_VERSION}`;
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -38,9 +38,9 @@ const PRECACHE_ASSETS = [
     './icons/providers/freereels.png',
     './icons/providers/goodshort.png',
     './icons/providers/netshort.png',
+    './icons/providers/pinedrama.png',
     './icons/providers/reelshort.png',
     './icons/providers/shortical.png',
-    './icons/providers/shortmax.png',
     'https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js'
 ];
 

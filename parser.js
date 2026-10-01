@@ -425,7 +425,7 @@ const DramaParser = (() => {
      * Check if a tag or word is provider branding
      */
     function isBrandedWord(word) {
-        return /narto|dramabox|bilitv|shortical|dramawave|anyreel|bibishort|shortmax|freereels/i.test(word);
+        return /narto|dramabox|bilitv|shortical|dramawave|anyreel|bibishort|shortmax|freereels|pinedrama/i.test(word);
     }
 
     /**
