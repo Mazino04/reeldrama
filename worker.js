@@ -276,7 +276,7 @@ async function processRequest(request, env, ctx) {
     // - Media requests: 35s
     // - Search/import & watch pages: 45s (remote provider scraping takes 15-25s)
     // - Standard APIs / browse: 25s
-    const timeoutMs = isMediaRequest ? 35000 : (isImportOrScrape ? 45000 : 25000);
+    const timeoutMs = isMediaRequest ? 35000 : (isImportOrScrape ? 50000 : 25000);
     const timeoutId = setTimeout(() => {
         try { abortCtrl.abort(); } catch (_) {}
     }, timeoutMs);
@@ -288,8 +288,12 @@ async function processRequest(request, env, ctx) {
 
         // Retry search/import if upstream scraping gave initial 502/504
         if ((response.status === 502 || response.status === 504) && isImportOrScrape && !abortCtrl.signal.aborted) {
-            await new Promise(r => setTimeout(r, 1500));
-            response = await fetch(parsed.href, fetchInit);
+            for (let retry = 0; retry < 2 && (response.status === 502 || response.status === 504) && !abortCtrl.signal.aborted; retry++) {
+                await new Promise(r => setTimeout(r, 2500));
+                if (!abortCtrl.signal.aborted) {
+                    response = await fetch(parsed.href, fetchInit);
+                }
+            }
         }
     } catch (err) {
         clearTimeout(timeoutId);

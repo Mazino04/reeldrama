@@ -295,6 +295,10 @@
                         <img class="provider-tab-logo" src="icons/providers/dramawave.png" alt="DramaWave" width="22" height="22" loading="lazy">
                         <span class="provider-tab-text">DramaWave</span>
                     </button>
+                    <button class="provider-tab-pill" type="button" role="tab" data-provider="flextv" aria-selected="false" title="FlexTV Official App">
+                        <img class="provider-tab-logo" src="icons/providers/flextv.png" alt="FlexTV" width="22" height="22" loading="lazy">
+                        <span class="provider-tab-text">FlexTV</span>
+                    </button>
                     <button class="provider-tab-pill" type="button" role="tab" data-provider="flickreels" aria-selected="false" title="FlickReels Official App">
                         <img class="provider-tab-logo" src="icons/providers/flickreels.png" alt="FlickReels" width="22" height="22" loading="lazy">
                         <span class="provider-tab-text">FlickReels</span>
@@ -310,10 +314,6 @@
                     <button class="provider-tab-pill" type="button" role="tab" data-provider="netshort" aria-selected="false" title="NetShort Official App">
                         <img class="provider-tab-logo" src="icons/providers/netshort.png" alt="NetShort" width="22" height="22" loading="lazy">
                         <span class="provider-tab-text">NetShort</span>
-                    </button>
-                    <button class="provider-tab-pill" type="button" role="tab" data-provider="pinedrama" aria-selected="false" title="PineDrama Official App">
-                        <img class="provider-tab-logo" src="icons/providers/pinedrama.png" alt="PineDrama" width="22" height="22" loading="lazy">
-                        <span class="provider-tab-text">PineDrama</span>
                     </button>
                     <button class="provider-tab-pill" type="button" role="tab" data-provider="reelshort" aria-selected="false" title="ReelShort Official App">
                         <img class="provider-tab-logo" src="icons/providers/reelshort.png" alt="ReelShort" width="22" height="22" loading="lazy">
@@ -661,6 +661,7 @@
                 <!-- Buffering / Loading Indicator (Transparent, non-blocking TikTok style) -->
                 <div class="player-buffering" id="player-buffering" style="display: none;">
                     <div class="player-spinner"></div>
+                    <div class="player-buffering-text" id="player-buffering-text" style="display: none; color: #fff; font-size: 13px; margin-top: 10px; text-shadow: 0 1px 4px rgba(0,0,0,0.8); text-align: center; max-width: 260px;"></div>
                 </div>
 
                 <!-- Error Overlay (100% Internal, no external links!) -->
@@ -950,7 +951,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
     <script src="firebase-config.js?v=46"></script>
-    <script src="parser.js?v=51"></script>
-    <script src="app.js?v=51"></script>
+    <script src="parser.js?v=52"></script>
+    <script src="app.js?v=52"></script>
 </body>
 </html>

@@ -43,11 +43,11 @@ const ALLOWED_PROVIDERS = [
     { key: 'dramabox', label: 'DramaBox', logo: 'icons/providers/dramabox.png', icon: 'icons/providers/dramabox.png' },
     { key: 'dramashorts', label: 'DramaShorts', logo: 'icons/providers/dramashorts.png', icon: 'icons/providers/dramashorts.png' },
     { key: 'dramawave', label: 'DramaWave', logo: 'icons/providers/dramawave.png', icon: 'icons/providers/dramawave.png' },
+    { key: 'flextv', label: 'FlexTV', logo: 'icons/providers/flextv.png', icon: 'icons/providers/flextv.png' },
     { key: 'flickreels', label: 'FlickReels', logo: 'icons/providers/flickreels.png', icon: 'icons/providers/flickreels.png' },
     { key: 'freereels', label: 'FreeReels', logo: 'icons/providers/freereels.png', icon: 'icons/providers/freereels.png' },
     { key: 'goodshort', label: 'GoodShort', logo: 'icons/providers/goodshort.png', icon: 'icons/providers/goodshort.png' },
     { key: 'netshort', label: 'NetShort', logo: 'icons/providers/netshort.png', icon: 'icons/providers/netshort.png' },
-    { key: 'pinedrama', label: 'PineDrama', logo: 'icons/providers/pinedrama.png', icon: 'icons/providers/pinedrama.png' },
     { key: 'reelshort', label: 'ReelShort', logo: 'icons/providers/reelshort.png', icon: 'icons/providers/reelshort.png' },
     { key: 'shortical', label: 'Shortical', logo: 'icons/providers/shortical.png', icon: 'icons/providers/shortical.png' }
 ];
@@ -307,7 +307,7 @@ const UserDataManager = {
         if (s === 'watch' || s === 'detail' || s === 'search' || s === 'import' || s === 'book' || s === 'drama') return true;
         if (s === '/search/import' || s === '/import' || s === '/search' || s === '/detail/watch' || s === '/watch') return true;
         if (s.startsWith('https://narto-drama.com') && (s.endsWith('/search/import') || s.endsWith('/search') || s.endsWith('/watch') || s.endsWith('/detail/watch') || s === 'https://narto-drama.com' || s === 'https://narto-drama.com/')) return true;
-        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'dramawave_' || s === 'anyreel_' || s === 'bibishort_' || s === 'flickreels_' || s === 'freereels_' || s === 'pinedrama_' || s === 'shortical_' || s === 'shortmax_') return true;
+        if (s === 'watch_' || s === 'book_' || s === 'detail_' || s === 'title_' || s === 'dramabox_' || s === 'reelshort_' || s === 'dramawave_' || s === 'anyreel_' || s === 'bibishort_' || s === 'flextv_' || s === 'flickreels_' || s === 'freereels_' || s === 'pinedrama_' || s === 'shortical_' || s === 'shortmax_') return true;
         return false;
     },
 
@@ -366,7 +366,7 @@ const UserDataManager = {
             keys.add(`book_${coreId.toLowerCase()}`);
             keys.add(`detail_${coreId.toLowerCase()}`);
 
-            const providers = ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'];
+            const providers = ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flextv', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'];
             const targetProv = (typeof target === 'object' ? (target.provider || target.category_name) : '') || '';
             if (targetProv) {
                 const cleanProv = targetProv.toLowerCase().replace(/\s+/g, '');
@@ -414,7 +414,7 @@ const UserDataManager = {
                 const prov = record.provider.toLowerCase().replace(/\s+/g, '');
                 if (!this.isGenericIdentifier(prov)) aliases.add(`${prov}_${coreId}`);
             }
-            ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'].forEach(p => {
+            ['anyreel', 'bibishort', 'dramabox', 'dramashorts', 'dramawave', 'flextv', 'flickreels', 'freereels', 'goodshort', 'netshort', 'pinedrama', 'reelshort', 'shortical', 'shortmax', 'sereal', 'moboreels', 'stardust'].forEach(p => {
                 aliases.add(`${p}_${coreId}`);
             });
         }
@@ -3449,37 +3449,37 @@ async function fetchFastHtml(targetUrl) {
 
     // ─── 3. Cloudflare Worker (Primary Dedicated Proxy) ──────────────────────
     const isImport = targetUrl.includes('/search/import');
-    const fetchTimeout = isImport ? 45000 : 25000;
+    const fetchTimeout = isImport ? 50000 : 25000;
     const errors = [];
 
     if (CF_WORKER_URL && CF_WORKER_URL.trim()) {
-        try {
-            const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
-            let text = await tryFetch(workerUrl, { timeout: fetchTimeout });
-            if (!isValidDramaHtml(text) && isImport) {
-                // Wait 2s and retry as Narto Drama finishes on-demand scrape
-                await new Promise(r => setTimeout(r, 2000));
-                text = await tryFetch(workerUrl, { timeout: fetchTimeout });
+        const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
+        const maxAttempts = isImport ? 4 : 2;
+        let lastErr = null;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                const text = await tryFetch(workerUrl, { timeout: fetchTimeout });
+                if (isValidDramaHtml(text)) {
+                    DetailCache.set(targetUrl, text);
+                    return { html: text, source: attempt === 1 ? 'CF Worker' : `CF Worker (Retry ${attempt - 1})` };
+                }
+                lastErr = new Error('Invalid drama HTML content returned');
+            } catch (e) {
+                lastErr = e;
+                const isRetryable = e.message.includes('502') || e.message.includes('504') || e.message.includes('520') || e.message.includes('524') || e.message.includes('Failed to fetch') || e.message.includes('NetworkError') || e.message.includes('timeout') || isImport;
+                if (!isRetryable || attempt === maxAttempts) {
+                    break;
+                }
             }
-            if (isValidDramaHtml(text)) {
-                DetailCache.set(targetUrl, text);
-                return { html: text, source: 'CF Worker' };
+
+            if (attempt < maxAttempts) {
+                // Progressive delay (3s, 5s, 7s for on-demand scrape; 1.5s for normal transient glitch)
+                const delay = isImport ? (attempt * 2000 + 1000) : 1500;
+                await new Promise(r => setTimeout(r, delay));
             }
-            errors.push('CF Worker: invalid content');
-        } catch (e) {
-            if (isImport) {
-                try {
-                    await new Promise(r => setTimeout(r, 2000));
-                    const workerUrl = `${CF_WORKER_URL.replace(/\/$/, '')}/?url=${encodeURIComponent(targetUrl)}`;
-                    const text = await tryFetch(workerUrl, { timeout: 45000 });
-                    if (isValidDramaHtml(text)) {
-                        DetailCache.set(targetUrl, text);
-                        return { html: text, source: 'CF Worker (Retry)' };
-                    }
-                } catch (_) {}
-            }
-            errors.push(`CF Worker: ${e.message}`);
         }
+        if (lastErr) errors.push(`CF Worker: ${lastErr.message}`);
     }
 
     // ─── 4. Direct fetch fallback (Localhost or unblocked network) ────────────
@@ -4574,9 +4574,11 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
     // If cleanWatchUrl is a /search/import URL, resolve it first to the canonical detail/watch URL
     if (cleanWatchUrl.includes('/search/import')) {
+        showPlayerBuffering(true, 'Connecting to provider & importing episodes... This may take up to 20-30s on first load.');
         try {
             const { html: importHtml } = await fetchFastHtml(cleanWatchUrl);
             if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+            showPlayerBuffering(true);
 
             // 1. Direct stream extraction from the imported watch page HTML
             const directStreamData = DramaParser.extractStreamData(importHtml, cleanWatchUrl);
@@ -5084,18 +5086,35 @@ function renderQualityMenu() {
 /**
  * Non-blocking, smooth TikTok-style buffering indicator
  */
-function showPlayerBuffering(show = true) {
+function showPlayerBuffering(show = true, message = '') {
     if (!elements.playerBuffering) return;
     clearTimeout(PlayerState.bufferingTimer);
     if (show) {
-        // Debounce showing spinner by 280ms so smooth scrolling/fast loads never flicker a spinner
-        PlayerState.bufferingTimer = setTimeout(() => {
-            if (elements.playerBuffering && !PlayerState.isPlaying) {
-                elements.playerBuffering.style.display = 'flex';
+        if (elements.playerBufferingText) {
+            if (message) {
+                elements.playerBufferingText.textContent = message;
+                elements.playerBufferingText.style.display = 'block';
+            } else {
+                elements.playerBufferingText.style.display = 'none';
+                elements.playerBufferingText.textContent = '';
             }
-        }, 280);
+        }
+        if (message) {
+            elements.playerBuffering.style.display = 'flex';
+        } else {
+            // Debounce showing spinner by 280ms so smooth scrolling/fast loads never flicker a spinner
+            PlayerState.bufferingTimer = setTimeout(() => {
+                if (elements.playerBuffering && !PlayerState.isPlaying) {
+                    elements.playerBuffering.style.display = 'flex';
+                }
+            }, 280);
+        }
     } else {
         elements.playerBuffering.style.display = 'none';
+        if (elements.playerBufferingText) {
+            elements.playerBufferingText.style.display = 'none';
+            elements.playerBufferingText.textContent = '';
+        }
     }
 }
 
