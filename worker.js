@@ -179,41 +179,26 @@ async function processRequest(request, env, ctx) {
         upstreamHeaders.set("X-Requested-With", xRequestedWith);
     }
 
-    // Cookies & Credentials (Narto Drama Authentication)
+    // Cookies & Credentials
     let clientCookie = request.headers.get("Cookie") || request.headers.get("X-ND-Cookie") || reqUrl.searchParams.get("cookie") || "";
     const isNartoDrama = host.includes("narto-drama.com") || host.includes("hakunaymatata.com");
 
-    const DEFAULT_ND_COOKIES = [
-        'remember_frontend_59ba36addc2b2f9401580f014c7f58ea4e30989d=eyJpdiI6IlhOV2dDTld5bWEvYjJhcTVpNEV5Rnc9PSIsInZhbHVlIjoiSFFZV3YrRForcWRqaGw1NThXdWtBT0tNaGxUdlpuMkZnVUhjVEdKNEdvclNOY1RtZ3hNd2U4OXRBODFJbG1HZnFlN2t6dUZEb3YrNGVlNUFjQWw3MGtieFc2dFh3dDNGdnhwbjVHbHV1WEozM0VtV2s2eGVQa1gybzdKY3dPaTJDL3c5T3IzdEZNZ21KZDBaYmR1bWcrbE11N25WelZJUFlZKy9CbDdMR0llbjhiSmxydGR5dEk3WXNBekNjcktqUS9qQzRTSkhUd2dSSU4wRFowLzltaTA0ZmFoc3RGNUp4S0NaQ3g0YU55MD0iLCJtYWMiOiJjYmJlM2UzZTg2ZTdiYmQxMTA5OWQ2OWUyZGQ5ZjU1ZjhlNWI3ZWJlNzFiMWExNDU0ZTE1MWMxMmNiMGFmYmRjIiwidGFnIjoiIn0=',
-        'laravel-session=eyJpdiI6InhHUWpubTI1Vzl4YlZqalFOOVFZUUE9PSIsInZhbHVlIjoiU2NaVytaZFZyVU5YbVhKZi9QNFhJYTA0MzdxRy8xK2pubWJFODlORnV3L09uUnM5czVjTy80bDRXS3MwdUpreGI2a1AvdXdwdVcyNW5jUmFZOWllek1WbDVKRnY5M2svRzVUQUY1a1pkNEkweEpRbGdqNFNDVHJuSFNwZ3o5MlkiLCJtYWMiOiI3YjA2ZWNlMTY1NzdkMmJkNzQ1ZWIyNTFmNTlkZGJmMThlNWY4ZGNiYzA0OGZiMDk1MDFlNDc3NGIzMGE1NTA4IiwidGFnIjoiIn0=',
-        'XSRF-TOKEN=eyJpdiI6IllGR3VwdFpubjJiQ2RRMXVhQzFIYlE9PSIsInZhbHVlIjoiREFBUXE1ZDN5K0hqcEhEbTN2T25NZkpoWDNNQ3I2MVFmejdGM3BFa2tKYUR2dlJoM3BoOG9DdFlSUk95dVczT09iTlBBMWVaR0ZRN1JvUHIyVWp1MUkzdzgyWXFrY1hxQ2prcVlNSmxEcEJxRmpGS29Kb3BCb3QyNzFBSnVwMk0iLCJtYWMiOiIwZTNhNmZhYWU0NzFhNDY0N2NlNjdlOGE5ODJhZWIzYjVkNTY3ZTI3Nzk1NTEzZjY1MTAxZGMwYzE4MzY2OWNjIiwidGFnIjoiIn0='
-    ];
-
-    if (isNartoDrama) {
-        for (const cookiePair of DEFAULT_ND_COOKIES) {
-            const cookieName = cookiePair.split('=')[0];
-            if (!clientCookie.includes(`${cookieName}=`)) {
-                clientCookie = clientCookie ? `${clientCookie}; ${cookiePair}` : cookiePair;
-            }
-        }
-        if (!clientCookie.includes("nd_ck=")) {
-            const autoNdCk = `nd_ck=${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-            clientCookie = clientCookie ? `${clientCookie}; ${autoNdCk}` : autoNdCk;
-        }
+    if (isNartoDrama && !clientCookie.includes("nd_ck=")) {
+        const autoNdCk = `nd_ck=${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        clientCookie = clientCookie ? `${clientCookie}; ${autoNdCk}` : autoNdCk;
     }
 
     if (clientCookie) {
         upstreamHeaders.set("Cookie", clientCookie);
     }
 
-    // Referer & Origin (Prevents 403 Forbidden on CDNs & Narto Drama)
-    if (isNartoDrama) {
-        upstreamHeaders.set("Referer", "https://narto-drama.com/");
+    // Referer & Origin (Prevents 403 Forbidden on CDNs & Cloudflare WAF 525 on GETs)
+    upstreamHeaders.set("Referer", "https://narto-drama.com/");
+    if (request.method !== "GET" && request.method !== "HEAD") {
         upstreamHeaders.set("Origin", "https://narto-drama.com");
     } else {
-        upstreamHeaders.set("Referer", "https://narto-drama.com/");
         const clientOrigin = request.headers.get("Origin");
-        if (clientOrigin && clientOrigin !== "null") {
+        if (clientOrigin && clientOrigin !== "null" && !isNartoDrama) {
             upstreamHeaders.set("Origin", clientOrigin);
         }
     }
@@ -282,6 +267,9 @@ async function processRequest(request, env, ctx) {
     }, timeoutMs);
 
     let response;
+    const subEpMatch = pathname.match(/\/(?:detail\/)?watch\/([^/?#]+)\/(\d+)/i);
+    const isSubEpisode = subEpMatch && parseInt(subEpMatch[2], 10) > 1;
+
     try {
         fetchInit.signal = abortCtrl.signal;
         response = await fetch(parsed.href, fetchInit);
@@ -295,20 +283,59 @@ async function processRequest(request, env, ctx) {
                 }
             }
         }
+
+        // Sub-episode fallback: If upstream returns 5xx (500, 520-530, 502, 504) on /watch/.../6,
+        // automatically fallback to fetching Episode 1 (/1), which contains all episodes in episodeItemsRaw!
+        if (isSubEpisode && (response.status >= 500 || !response.ok) && !abortCtrl.signal.aborted) {
+            try {
+                const ep1Url = new URL(parsed.href);
+                ep1Url.pathname = parsed.pathname.replace(new RegExp(`/${subEpMatch[2]}(?=[/?#]|$)`), '/1');
+                const ep1Res = await fetch(ep1Url.toString(), fetchInit);
+                if (ep1Res.ok) {
+                    response = ep1Res;
+                }
+            } catch (_) {}
+        }
     } catch (err) {
         clearTimeout(timeoutId);
-        if (err.name === 'AbortError') {
-            return json({
-                error: "Upstream request timed out or client aborted.",
-                target: parsed.href
-            }, 504, request);
+        // If initial fetch timed out or failed on a sub-episode URL, attempt episode 1 fallback
+        if (isSubEpisode) {
+            try {
+                const ep1Url = new URL(parsed.href);
+                ep1Url.pathname = parsed.pathname.replace(new RegExp(`/${subEpMatch[2]}(?=[/?#]|$)`), '/1');
+                const ep1Res = await fetch(ep1Url.toString(), {
+                    ...fetchInit,
+                    signal: undefined
+                });
+                if (ep1Res.ok) {
+                    response = ep1Res;
+                }
+            } catch (_) {}
         }
-        return json({
-            error: `Fetch failed: ${err.message}`,
-            target: parsed.href
-        }, 502, request);
+
+        if (!response) {
+            if (err.name === 'AbortError') {
+                return json({
+                    error: "Upstream request timed out or client aborted.",
+                    target: parsed.href
+                }, 504, request);
+            }
+            return json({
+                error: `Fetch failed: ${err.message}`,
+                target: parsed.href
+            }, 502, request);
+        }
     } finally {
         clearTimeout(timeoutId);
+    }
+
+    // Intercept unrecoverable upstream Cloudflare 520-530 origin errors and return clean CORS JSON
+    if (response.status >= 520 && response.status <= 530) {
+        return json({
+            error: `Upstream Cloudflare origin error (${response.status})`,
+            status: response.status,
+            target: parsed.href
+        }, response.status, request);
     }
 
     const finalUrl = response.url || parsed.href;

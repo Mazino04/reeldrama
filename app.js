@@ -4028,6 +4028,19 @@ async function openDramaDetailPage(item, cardEl = null) {
     try {
         const { html } = await fetchFastHtml(item.url);
         const detailData = DramaParser.parseEpisodesFromDetailPage(html, 'https://narto-drama.com');
+        const streamData = DramaParser.extractStreamData(html, item.url);
+
+        const dramaKey = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+        if (streamData && (streamData.streamUrl || (streamData.episodes && streamData.episodes.length > 0) || streamData.refreshContext)) {
+            if (dramaKey) StreamCache.set(dramaKey, streamData);
+            if (streamData.episodes && streamData.episodes.length > 0) {
+                PlayerState.episodes = streamData.episodes;
+                if (!detailData.episodeList || detailData.episodeList.length === 0) {
+                    detailData.episodeList = streamData.episodes;
+                    detailData.episodeCount = streamData.episodes.length;
+                }
+            }
+        }
 
         if (detailData.description) {
             setDetailPageDescription(detailData.description);
@@ -4419,12 +4432,7 @@ const closeQuickView = closeDramaDetailPage;
 function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
     if (!dramaUrl) return '';
     const activeLang = lang || AppState.currentLang || 'en-US';
-
-    // If already an episode URL with episode number, preserve and normalize language
-    if (/\/watch\/[^?#]+\/\d+/i.test(dramaUrl)) {
-        const base = dramaUrl.split('?')[0];
-        return `${base}?lang=${encodeURIComponent(activeLang)}`;
-    }
+    const targetEp = Math.max(1, parseInt(epNum, 10) || 1);
 
     // Never append /{epNum} to /search/import URLs directly (that leads to 404)
     if (dramaUrl.includes('/search/import')) {
@@ -4433,7 +4441,7 @@ function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
 
     let clean = dramaUrl.split('?')[0].replace(/\/+$/, '');
     clean = clean.replace(/\/\d+$/, '');
-    return `${clean}/${epNum}?lang=${encodeURIComponent(activeLang)}`;
+    return `${clean}/${targetEp}?lang=${encodeURIComponent(activeLang)}`;
 }
 
 /**
@@ -4680,7 +4688,32 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
         }
     }
 
-    if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
+    // 0. Immediate playback from already-parsed episodes in memory!
+    const inMemoryList = (PlayerState.episodes && PlayerState.episodes.length > 0) ? PlayerState.episodes : (drama.episodeList || []);
+    if (!forceRefresh && inMemoryList.length > 0) {
+        const foundEp = inMemoryList.find(e => Number(e.number) === epNum || e.number === `EP ${epNum}`);
+        if (foundEp && (foundEp.playUrl || foundEp.directPlayUrl)) {
+            let activeUrl = foundEp.playUrl || foundEp.directPlayUrl;
+            let activeKey = foundEp.key || null;
+            let activeExp = foundEp.exp || null;
+            let activeIsHls = foundEp.isHls !== undefined ? foundEp.isHls : !activeUrl.includes('.mp4');
+
+            if (activeExp && (activeExp * 1000) < Date.now()) {
+                if (foundEp.directPlayUrl && foundEp.directPlayUrl !== activeUrl) {
+                    activeUrl = foundEp.directPlayUrl;
+                    activeExp = null;
+                    activeIsHls = !activeUrl.includes('.mp4');
+                }
+            }
+
+            if (activeUrl) {
+                PlayerState.episodes = inMemoryList;
+                renderEpisodesSheet(PlayerState.episodes, epNum);
+                loadStreamInVideo(activeUrl, activeIsHls, activeKey, activeExp, isSeamless, currentSession);
+                return;
+            }
+        }
+    }
 
     // If stream data for this entire drama is ALREADY cached, instant playback!
     const dramaKey = (drama.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
@@ -4749,7 +4782,21 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
     // Fetch the episode watch page HTML to extract streams
     try {
-        const { html } = await fetchFastHtml(cleanWatchUrl);
+        let fetchedRes;
+        try {
+            fetchedRes = await fetchFastHtml(cleanWatchUrl);
+        } catch (watchErr) {
+            // If fetching episode-specific watch URL (e.g. /6) failed with 5xx/525 or error,
+            // fall back to fetching episode 1 which contains the entire episode list!
+            if (epNum > 1 && cleanWatchUrl.includes(`/${epNum}`)) {
+                const ep1Url = getEpisodeWatchUrl(cleanWatchUrl, 1);
+                console.warn(`[playEpisode] Watch URL ${cleanWatchUrl} failed (${watchErr.message}), falling back to EP 1: ${ep1Url}`);
+                fetchedRes = await fetchFastHtml(ep1Url);
+            } else {
+                throw watchErr;
+            }
+        }
+        const { html } = fetchedRes;
         if (!PlayerState.isOpen || PlayerState.playSessionId !== currentSession) return;
         const streamData = DramaParser.extractStreamData(html, cleanWatchUrl);
 
