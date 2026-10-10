@@ -4484,15 +4484,36 @@ async function resolveDynamicRefreshSource(refreshContext, epNum, fallbackWatchU
         }
 
         if (payload) {
-            const rawUrl = (payload.play_url || payload.direct_play_url || '').trim();
+            const playUrl = (payload.play_url || '').trim();
+            const directUrl = (payload.direct_play_url || '').trim();
+            const isDirectLocal = payload.direct_play_is_local === true || directUrl.includes('cdn.narto-drama.com');
+            const isDramabox = playUrl.includes('dramabox-stream.narto-drama.com');
+
+            // Prioritize direct_play_url if local CDN or if play_url is from dramabox-stream (which expires with 410)
+            let rawUrl = '';
+            let rawFallback = '';
+            if (directUrl && (isDirectLocal || isDramabox || !playUrl)) {
+                rawUrl = directUrl;
+                rawFallback = playUrl || directUrl;
+            } else {
+                rawUrl = playUrl || directUrl;
+                rawFallback = directUrl || playUrl;
+            }
+
             if (rawUrl) {
                 const unwrapped = DramaParser.unwrapStreamUrl(rawUrl);
                 const finalUrl = unwrapped.streamUrl || rawUrl;
                 const finalKey = unwrapped.key || payload.key || null;
                 const finalExp = unwrapped.exp || payload.exp || null;
-                const isHls = (payload.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(finalUrl);
+                const cleanFinal = finalUrl.split('?')[0].toLowerCase();
+                const isExplicitMp4 = cleanFinal.endsWith('.mp4') || cleanFinal.endsWith('.webm') || cleanFinal.endsWith('.m4v');
+                const isExplicitM3u8 = cleanFinal.endsWith('.m3u8') || cleanFinal.endsWith('.m3u') || finalUrl.includes('.m3u8');
+                const isHls = !isExplicitMp4 && ((payload.direct_play_is_hls === true) || isExplicitM3u8);
+
                 return {
                     streamUrl: finalUrl,
+                    fallbackUrl: rawFallback,
+                    directPlayUrl: directUrl,
                     isHls,
                     key: finalKey,
                     exp: finalExp,
@@ -4520,6 +4541,8 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     // Immediately purge active media, abort in-flight fragments, reset scrub bar & show buffering
     cleanupActiveVideoPlayback();
     showPlayerBuffering(true);
+    PlayerState.hasAttemptedForcePageRefresh = false;
+    PlayerState.isRefreshingSource = false;
 
     const epNum = parseInt(episodeNumber, 10) || 1;
     PlayerState.currentDrama = drama;
@@ -4699,9 +4722,24 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
 
             if (activeUrl) {
                 if (activeExp && (activeExp * 1000) < Date.now()) {
-                    closePlayer();
-                    showToast('This episode is not available at this moment or has been removed');
-                    return;
+                    console.warn('[Player] Cached stream expired, resolving alternative or fresh source...');
+                    if (activeEp?.directPlayUrl && activeEp.directPlayUrl !== activeUrl) {
+                        activeUrl = activeEp.directPlayUrl;
+                        activeExp = null;
+                        activeIsHls = !activeUrl.includes('.mp4');
+                    } else if (activeEp?.fallbackUrl && activeEp.fallbackUrl !== activeUrl) {
+                        activeUrl = activeEp.fallbackUrl;
+                        activeExp = null;
+                        activeIsHls = !activeUrl.includes('.mp4');
+                    } else if (cached.refreshContext) {
+                        const dynamicRes = await resolveDynamicRefreshSource(cached.refreshContext, epNum, cleanWatchUrl);
+                        if (dynamicRes && dynamicRes.streamUrl) {
+                            activeUrl = dynamicRes.streamUrl;
+                            activeKey = dynamicRes.key;
+                            activeExp = dynamicRes.exp;
+                            activeIsHls = dynamicRes.isHls;
+                        }
+                    }
                 }
                 loadStreamInVideo(activeUrl, activeIsHls, activeKey, activeExp, isSeamless, currentSession);
                 return;
@@ -4752,9 +4790,24 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             }
 
             if (targetExp && (targetExp * 1000) < Date.now()) {
-                closePlayer();
-                showToast('This episode is not available at this moment or has been removed');
-                return;
+                console.warn('[Player] Target stream expired, resolving alternative or fresh source...');
+                if (activeEp?.directPlayUrl && activeEp.directPlayUrl !== targetUrl) {
+                    targetUrl = activeEp.directPlayUrl;
+                    targetExp = null;
+                    targetIsHls = !targetUrl.includes('.mp4');
+                } else if (activeEp?.fallbackUrl && activeEp.fallbackUrl !== targetUrl) {
+                    targetUrl = activeEp.fallbackUrl;
+                    targetExp = null;
+                    targetIsHls = !targetUrl.includes('.mp4');
+                } else if (streamData.refreshContext) {
+                    const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, epNum, cleanWatchUrl);
+                    if (dynamicRes && dynamicRes.streamUrl) {
+                        targetUrl = dynamicRes.streamUrl;
+                        targetKey = dynamicRes.key;
+                        targetExp = dynamicRes.exp;
+                        targetIsHls = dynamicRes.isHls;
+                    }
+                }
             }
 
             if (targetUrl) {
@@ -4762,12 +4815,17 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                 return;
             }
         } else if (streamData.streamUrl) {
+            let directUrl = streamData.streamUrl;
             if (streamData.exp && (streamData.exp * 1000) < Date.now()) {
-                closePlayer();
-                showToast('This episode is not available at this moment or has been removed');
-                return;
+                console.warn('[Player] Direct stream expired, trying refreshContext...');
+                if (streamData.refreshContext) {
+                    const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, epNum, cleanWatchUrl);
+                    if (dynamicRes && dynamicRes.streamUrl) {
+                        directUrl = dynamicRes.streamUrl;
+                    }
+                }
             }
-            loadStreamInVideo(streamData.streamUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless, currentSession);
+            loadStreamInVideo(directUrl, streamData.isHls, streamData.key, streamData.exp, isSeamless, currentSession);
             return;
         } else if (streamData.refreshContext) {
             const dynamicRes = await resolveDynamicRefreshSource(streamData.refreshContext, epNum, cleanWatchUrl);
@@ -5298,6 +5356,118 @@ function cleanupActiveVideoPlayback() {
 }
 
 /**
+ * Centralized automatic stream recovery for HTTP 410, expiration, or playback errors
+ * Systematically attempts:
+ * 1. Episode's directPlayUrl (permanent CDN MP4)
+ * 2. Episode's fallbackUrl
+ * 3. Dynamic refreshSource resolution via Narto Drama edge API
+ * 4. Force-reloading episode page HTML
+ */
+async function attemptEpisodeStreamRecovery(failedUrl, reason = 'stream_error') {
+    if (!PlayerState.isOpen) return false;
+    const currentSession = PlayerState.playSessionId;
+    const epNum = PlayerState.currentEpisodeNumber;
+    const activeEp = PlayerState.episodes?.find(e => Number(e.number) === epNum);
+
+    console.warn(`[Player 410/Recovery] Stream error (${reason}) on:`, failedUrl);
+
+    // Normalize failedUrl to extract underlying target if proxied
+    let rawFailed = failedUrl || '';
+    if (rawFailed.includes('?url=')) {
+        try {
+            rawFailed = decodeURIComponent(new URL(rawFailed).searchParams.get('url') || rawFailed);
+        } catch (_) {}
+    }
+
+    // 1. Try active episode's directPlayUrl (e.g. permanent cdn.narto-drama.com stream)
+    if (activeEp && activeEp.directPlayUrl) {
+        let rawDirect = activeEp.directPlayUrl;
+        if (rawDirect.includes('?url=')) {
+            try {
+                rawDirect = decodeURIComponent(new URL(rawDirect).searchParams.get('url') || rawDirect);
+            } catch (_) {}
+        }
+        if (rawDirect && rawDirect !== rawFailed && activeEp.directPlayUrl !== failedUrl) {
+            console.log('[Player Recovery] Switching to active episode directPlayUrl:', activeEp.directPlayUrl);
+            const direct = activeEp.directPlayUrl;
+            activeEp.directPlayUrl = null; // Prevent retry loop
+            const cleanD = (direct || '').split('?')[0].toLowerCase();
+            const isMp4 = cleanD.endsWith('.mp4') || cleanD.endsWith('.webm') || cleanD.endsWith('.m4v');
+            const isHls = !isMp4 && (activeEp.isHls === true || /\.m3u8(?:\?|$)/i.test(direct));
+            loadStreamInVideo(direct, isHls, activeEp.key, null, false, currentSession);
+            return true;
+        }
+    }
+
+    // 2. Try active episode's fallbackUrl
+    if (activeEp && activeEp.fallbackUrl) {
+        let rawFallback = activeEp.fallbackUrl;
+        if (rawFallback.includes('?url=')) {
+            try {
+                rawFallback = decodeURIComponent(new URL(rawFallback).searchParams.get('url') || rawFallback);
+            } catch (_) {}
+        }
+        if (rawFallback && rawFallback !== rawFailed && activeEp.fallbackUrl !== failedUrl) {
+            console.log('[Player Recovery] Switching to active episode fallbackUrl:', activeEp.fallbackUrl);
+            const fallback = activeEp.fallbackUrl;
+            activeEp.fallbackUrl = null; // Prevent retry loop
+            const cleanF = (fallback || '').split('?')[0].toLowerCase();
+            const isMp4 = cleanF.endsWith('.mp4') || cleanF.endsWith('.webm') || cleanF.endsWith('.m4v');
+            const isHls = !isMp4 && (activeEp.isHls === true || /\.m3u8(?:\?|$)/i.test(fallback));
+            loadStreamInVideo(fallback, isHls, activeEp.key, null, false, currentSession);
+            return true;
+        }
+    }
+
+    // 3. Try dynamic refreshSource if refreshContext is available
+    const dramaKey = (PlayerState.currentDrama?.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
+    const cached = StreamCache.get(dramaKey);
+    const refreshCtx = PlayerState.currentDrama?.refreshContext || cached?.refreshContext;
+    if (refreshCtx && !PlayerState.isRefreshingSource) {
+        PlayerState.isRefreshingSource = true;
+        showPlayerBuffering(true, 'Refreshing video source...');
+        try {
+            const dynamicRes = await resolveDynamicRefreshSource(refreshCtx, epNum, PlayerState.currentEpisodeUrl);
+            PlayerState.isRefreshingSource = false;
+            if (PlayerState.isOpen && PlayerState.playSessionId === currentSession && dynamicRes && dynamicRes.streamUrl) {
+                const newUrl = dynamicRes.streamUrl;
+                let rawNew = newUrl;
+                if (rawNew.includes('?url=')) {
+                    try {
+                        rawNew = decodeURIComponent(new URL(rawNew).searchParams.get('url') || rawNew);
+                    } catch (_) {}
+                }
+                if (rawNew !== rawFailed && newUrl !== failedUrl) {
+                    console.log('[Player Recovery] Resolved fresh dynamic stream:', newUrl);
+                    if (activeEp) {
+                        activeEp.playUrl = newUrl;
+                        activeEp.directPlayUrl = dynamicRes.directPlayUrl || null;
+                        activeEp.fallbackUrl = dynamicRes.fallbackUrl || null;
+                        activeEp.isHls = dynamicRes.isHls;
+                    }
+                    loadStreamInVideo(newUrl, dynamicRes.isHls, dynamicRes.key, dynamicRes.exp, false, currentSession);
+                    return true;
+                }
+            }
+        } catch (_) {
+            PlayerState.isRefreshingSource = false;
+        }
+    }
+
+    // 4. Try re-fetching episode watch page HTML with forceRefresh
+    if (!PlayerState.hasAttemptedForcePageRefresh && PlayerState.currentDrama && PlayerState.currentEpisodeNumber) {
+        PlayerState.hasAttemptedForcePageRefresh = true;
+        showPlayerBuffering(true, 'Reconnecting to episode stream...');
+        try {
+            await playEpisode(PlayerState.currentDrama, epNum, PlayerState.currentEpisodeUrl, true);
+            return true;
+        } catch (_) {}
+    }
+
+    return false;
+}
+
+/**
  * Load and play a stream URL (.m3u8 or .mp4) in HTML5 video using adaptive Hls.js
  */
 function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, streamExp = null, isSeamless = false, sessionId = null) {
@@ -5317,10 +5487,15 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
         if (!streamExp && unwrapped.exp) streamExp = unwrapped.exp;
     }
 
-    // Check expiration timestamp for 410 Gone
+    // Check expiration timestamp for 410 Gone - recover automatically!
     if (streamExp && (streamExp * 1000) < Date.now()) {
-        closePlayer();
-        showToast('This episode is not available at this moment or has been removed');
+        console.warn('[Player] Stream token expired before playback. Attempting recovery...');
+        attemptEpisodeStreamRecovery(streamUrl, 'token_expired').then(recovered => {
+            if (!recovered && PlayerState.isOpen && (!sessionId || sessionId === PlayerState.playSessionId)) {
+                closePlayer();
+                showToast('This episode is not available at this moment or has been removed');
+            }
+        });
         return;
     }
 
@@ -5450,22 +5625,16 @@ function loadWithHlsJs(streamUrl, videoEl, isProxyAttempt = false, streamKey = n
     hls.on(Hls.Events.ERROR, (event, data) => {
         const statusCode = data.response?.code || data.response?.status || data.context?.xhr?.status;
 
-        // HTTP 410 detection: check if active episode has an alternative fallback stream URL first
+        // HTTP 410 detection: automatic fallback & recovery
         if (statusCode === 410) {
-            const activeEp = PlayerState.episodes?.find(e => Number(e.number) === PlayerState.currentEpisodeNumber);
-            if (activeEp && activeEp.fallbackUrl && activeEp.fallbackUrl !== streamUrl) {
-                console.warn('[Player] 410 on primary stream, retrying with fallback URL:', activeEp.fallbackUrl);
-                hls.destroy();
-                PlayerState.hls = null;
-                const fallback = activeEp.fallbackUrl;
-                activeEp.fallbackUrl = null; // prevent infinite loop
-                loadStreamInVideo(fallback, true, activeEp.key, activeEp.exp);
-                return;
-            }
             hls.destroy();
             PlayerState.hls = null;
-            closePlayer();
-            showToast('This episode is not available at this moment or has been removed');
+            attemptEpisodeStreamRecovery(streamUrl, 'http_410_hls').then(recovered => {
+                if (!recovered && PlayerState.isOpen) {
+                    closePlayer();
+                    showToast('This episode is not available at this moment or has been removed');
+                }
+            });
             return;
         }
 
@@ -5538,21 +5707,23 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
         const err = videoEl.error;
 
         // 1. Probe for HTTP 410 status code (expired/unavailable episode)
-        //    Skip probe if URL is from a known video CDN that rejects HEAD fetch with 428
-        //    (they require Range requests from a browser video element, not plain fetch)
+        let is410 = false;
         try {
             const probe = await fetchWithTimeout(streamUrl, { method: 'HEAD', timeout: 3500 });
             if (probe.status === 410) {
-                closePlayer();
-                showToast('This episode is not available at this moment or has been removed');
-                return;
+                is410 = true;
             }
-            // 428 = CDN requires browser-native video request (not a JS fetch)
-            // Ignore it — the video element itself will handle the actual request correctly
-            // if we route through HLS.js below
         } catch (_) {}
 
-        // If native video failed because it's actually an HLS stream (common on Chrome/Firefox):
+        if (is410) {
+            const recovered = await attemptEpisodeStreamRecovery(streamUrl, 'http_410_native');
+            if (recovered) return;
+            closePlayer();
+            showToast('This episode is not available at this moment or has been removed');
+            return;
+        }
+
+        // 2. If native video failed because it's actually an HLS stream (common on Chrome/Firefox):
         // NEVER route MP4 video files into Hls.js
         if (err && err.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && window.Hls && Hls.isSupported() && !PlayerState.hls) {
             const raw = (streamUrl || '').toLowerCase();
@@ -5563,16 +5734,7 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
             }
         }
 
-        // Check if there is an alternative play URL in active episode
-        if (PlayerState.episodes && PlayerState.episodes.length > 0) {
-            const activeEp = PlayerState.episodes.find(e => Number(e.number) === PlayerState.currentEpisodeNumber);
-            if (activeEp && activeEp.directPlayUrl && activeEp.directPlayUrl !== streamUrl) {
-                loadStreamInVideo(activeEp.directPlayUrl, activeEp.isHls, activeEp.key, activeEp.exp);
-                return;
-            }
-        }
-
-        // If native video failed on a proxied URL, automatically fallback to direct unproxied URL!
+        // 3. If native video failed on a proxied URL, automatically fallback to direct unproxied URL!
         if (streamUrl.includes('?url=')) {
             try {
                 const u = new URL(streamUrl);
@@ -5585,6 +5747,10 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
                 }
             } catch (_) {}
         }
+
+        // 4. Check if there is an alternative play URL or dynamic recovery route
+        const recovered = await attemptEpisodeStreamRecovery(streamUrl, 'native_video_error');
+        if (recovered) return;
 
         // If a network interruption occurs while video was already playing, attempt seamless resume
         if (err && err.code === MediaError.MEDIA_ERR_NETWORK && videoEl.currentTime > 0) {

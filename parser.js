@@ -617,47 +617,109 @@ const DramaParser = (() => {
             streamUrl = cleanJsonUrl(initMatch[1]);
         }
 
-        // 2. Direct episodeItemsRaw pattern: const episodeItemsRaw = [ { ... }, ... ]; or JSON key
-        const rawMatch = htmlString.match(/(?:const|let|var)?\s*["']?episodeItemsRaw["']?\s*[:=]\s*(\[[\s\S]*?\])\s*(?:const|let|var|;|,\s*["']|\n|}|<\/script>|$)/i);
-        if (rawMatch && rawMatch[1]) {
-            try {
-                const parsed = JSON.parse(rawMatch[1]);
-                if (Array.isArray(parsed)) {
-                    episodes = parsed.map(item => {
-                        const epNum = item.route_episode_number || item.number || 1;
-                        const multiResUrl = (Array.isArray(item.multi_resolutions) && item.multi_resolutions.length > 0)
-                            ? (item.multi_resolutions.find(r => r.is_default)?.stream_url || item.multi_resolutions[0]?.stream_url || '')
-                            : '';
-                        const rawPlayUrl = cleanJsonUrl(item.play_url || item.direct_play_url || multiResUrl || item.stream_url || '');
-                        const unwrappedEp = unwrapStreamUrl(rawPlayUrl);
-                        const epPlayUrl = unwrappedEp.streamUrl;
-                        const epDirectUrl = item.direct_play_url ? unwrapStreamUrl(cleanJsonUrl(item.direct_play_url)).streamUrl : epPlayUrl;
-                        const epFallbackUrl = cleanJsonUrl(item.direct_play_url || item.play_url || unwrappedEp.originalUrl || '');
-                        const epThumb = cleanJsonUrl(item.thumb_url || '');
-                        const epSub = cleanJsonUrl(item.subtitle_url || '');
-                        const isHls = (item.direct_play_is_hls === true) || /\.m3u8(?:\?|$)/i.test(epPlayUrl) || /\.m3u8(?:\?|$)/i.test(epDirectUrl) || /\.m3u8(?:\?|$)/i.test(epFallbackUrl);
-                        return {
-                            number: epNum,
-                            title: item.title ? cleanText(item.title) : `Episode ${epNum}`,
-                            playUrl: epPlayUrl || epDirectUrl || epFallbackUrl,
-                            directPlayUrl: epDirectUrl || epFallbackUrl,
-                            fallbackUrl: epFallbackUrl,
-                            key: unwrappedEp.key,
-                            exp: unwrappedEp.exp,
-                            subtitleUrl: epSub,
-                            thumbUrl: epThumb,
-                            isHls
-                        };
-                    });
+        // Helper to safely extract balanced JSON arrays (handles nested [], strings, escaped characters)
+        function extractBalancedJsonArray(text, varNames) {
+            for (const varName of varNames) {
+                const re = new RegExp('(?:const|let|var)?\\s*["\']?' + varName + '["\']?\\s*[:=]\\s*\\[', 'i');
+                const match = text.match(re);
+                if (!match) continue;
+                const arrayStart = match.index + match[0].length - 1;
+                let depth = 0;
+                let inString = false;
+                let escape = false;
+                for (let i = arrayStart; i < text.length; i++) {
+                    const char = text[i];
+                    if (escape) {
+                        escape = false;
+                        continue;
+                    }
+                    if (char === '\\') {
+                        escape = true;
+                        continue;
+                    }
+                    if (char === '"') {
+                        inString = !inString;
+                        continue;
+                    }
+                    if (!inString) {
+                        if (char === '[') depth++;
+                        else if (char === ']') {
+                            depth--;
+                            if (depth === 0) {
+                                const jsonStr = text.substring(arrayStart, i + 1);
+                                try {
+                                    const parsed = JSON.parse(jsonStr);
+                                    if (Array.isArray(parsed) && parsed.length > 0) {
+                                        return parsed;
+                                    }
+                                } catch (_) {}
+                                break;
+                            }
+                        }
+                    }
                 }
-            } catch (e) {
-                // Ignore JSON parse error, proceed to fallback
             }
+            return null;
         }
 
-        // If streamUrl not found, see if active episode in parsed episodes array has playUrl
-        if (!streamUrl && episodes.length > 0) {
-            const activeEp = episodes.find(e => e.number === currentEpisode) || episodes[0];
+        // 2. Direct episode items array extraction (episodeItemsRaw, episodeItems, etc.)
+        const parsedArray = extractBalancedJsonArray(htmlString, ['episodeItemsRaw', 'episodeItems', 'episode_items', 'episodes']);
+        if (parsedArray && Array.isArray(parsedArray)) {
+            episodes = parsedArray.map(item => {
+                const epNum = item.route_episode_number || item.number || 1;
+                const multiResUrl = (Array.isArray(item.multi_resolutions) && item.multi_resolutions.length > 0)
+                    ? (item.multi_resolutions.find(r => r.is_default)?.stream_url || item.multi_resolutions[0]?.stream_url || '')
+                    : '';
+                const itemPlayUrl = cleanJsonUrl(item.play_url || multiResUrl || item.stream_url || '');
+                const itemDirectUrl = item.direct_play_url ? cleanJsonUrl(item.direct_play_url) : '';
+
+                const unwrappedPlay = unwrapStreamUrl(itemPlayUrl);
+                const unwrappedDirect = itemDirectUrl ? unwrapStreamUrl(itemDirectUrl) : null;
+
+                const epPlayUrl = unwrappedPlay.streamUrl || itemPlayUrl;
+                const epDirectUrl = (unwrappedDirect && unwrappedDirect.streamUrl) || itemDirectUrl;
+
+                const isDirectLocal = (item.direct_play_is_local === true) || epDirectUrl.includes('cdn.narto-drama.com');
+                const isDramaboxStream = epPlayUrl.includes('dramabox-stream.narto-drama.com');
+
+                // If directPlayUrl is local CDN or if play_url is from dramabox-stream (known to expire with 410),
+                // prioritize directPlayUrl for rock-solid playback!
+                let primaryUrl = '';
+                let fallbackUrl = '';
+                if (epDirectUrl && (isDirectLocal || isDramaboxStream || !epPlayUrl)) {
+                    primaryUrl = epDirectUrl;
+                    fallbackUrl = epPlayUrl || epDirectUrl;
+                } else {
+                    primaryUrl = epPlayUrl || epDirectUrl;
+                    fallbackUrl = epDirectUrl || epPlayUrl;
+                }
+
+                const cleanPrimary = (primaryUrl || '').split('?')[0].toLowerCase();
+                const isExplicitMp4 = cleanPrimary.endsWith('.mp4') || cleanPrimary.endsWith('.webm') || cleanPrimary.endsWith('.m4v');
+                const isExplicitM3u8 = cleanPrimary.endsWith('.m3u8') || cleanPrimary.endsWith('.m3u') || primaryUrl.includes('.m3u8');
+                const isHls = !isExplicitMp4 && ((item.direct_play_is_hls === true) || isExplicitM3u8);
+
+                const epThumb = cleanJsonUrl(item.thumb_url || '');
+                const epSub = cleanJsonUrl(item.subtitle_url || '');
+
+                return {
+                    number: epNum,
+                    title: item.title ? cleanText(item.title) : `Episode ${epNum}`,
+                    playUrl: primaryUrl,
+                    directPlayUrl: epDirectUrl || fallbackUrl,
+                    fallbackUrl: fallbackUrl || epDirectUrl,
+                    key: unwrappedDirect?.key || unwrappedPlay.key || null,
+                    exp: unwrappedDirect?.exp || unwrappedPlay.exp || null,
+                    subtitleUrl: epSub,
+                    thumbUrl: epThumb,
+                    isHls
+                };
+            });
+        }
+
+        // If parsed episodes exist, the active episode's primary URL takes precedence over initialSourceUrl
+        if (episodes.length > 0) {
+            const activeEp = episodes.find(e => Number(e.number) === Number(currentEpisode)) || episodes[0];
             if (activeEp && activeEp.playUrl) {
                 streamUrl = activeEp.playUrl;
             }
