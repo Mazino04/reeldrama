@@ -610,10 +610,10 @@ const DramaParser = (() => {
             };
         }
 
-        // 1. Direct initialSourceUrl pattern: const initialSourceUrl = "https:\/\/..." or JSON key
+        // 1. Direct initialSourceUrl pattern (ONLY valid for Episode 1, never leak into sub-episodes)
         const initMatch = htmlString.match(/(?:const|let|var)?\s*["']?initialSourceUrl["']?\s*[:=]\s*["']([^"']+)["']/i)
             || htmlString.match(/(?:const|let|var)?\s*["']?(?:video_url|videoUrl|streamUrl|playUrl|stream_url)["']?\s*[:=]\s*["']([^"']+)["']/i);
-        if (initMatch && initMatch[1]) {
+        if (initMatch && initMatch[1] && currentEpisode === 1) {
             streamUrl = cleanJsonUrl(initMatch[1]);
         }
 
@@ -689,9 +689,12 @@ const DramaParser = (() => {
                 if (epDirectUrl && (isDirectLocal || isDramaboxStream || !epPlayUrl)) {
                     primaryUrl = epDirectUrl;
                     fallbackUrl = epPlayUrl || epDirectUrl;
-                } else {
-                    primaryUrl = epPlayUrl || epDirectUrl;
+                } else if (epPlayUrl && !isDramaboxStream) {
+                    primaryUrl = epPlayUrl;
                     fallbackUrl = epDirectUrl || epPlayUrl;
+                } else {
+                    primaryUrl = epDirectUrl || epPlayUrl;
+                    fallbackUrl = epPlayUrl || epDirectUrl;
                 }
 
                 const cleanPrimary = (primaryUrl || '').split('?')[0].toLowerCase();
@@ -702,9 +705,16 @@ const DramaParser = (() => {
                 const epThumb = cleanJsonUrl(item.thumb_url || '');
                 const epSub = cleanJsonUrl(item.subtitle_url || '');
 
+                let epUrl = '';
+                if (pageUrl) {
+                    const baseWatch = pageUrl.split('?')[0].replace(/\/\d+$/, '');
+                    epUrl = `${baseWatch}/${epNum}?lang=en-US`;
+                }
+
                 return {
                     number: epNum,
                     title: item.title ? cleanText(item.title) : `Episode ${epNum}`,
+                    url: epUrl,
                     playUrl: primaryUrl,
                     directPlayUrl: epDirectUrl || fallbackUrl,
                     fallbackUrl: fallbackUrl || epDirectUrl,
@@ -717,24 +727,32 @@ const DramaParser = (() => {
             });
         }
 
-        // If parsed episodes exist, the active episode's primary URL takes precedence over initialSourceUrl
+        // If parsed episodes exist, the active episode's primary URL takes precedence
         if (episodes.length > 0) {
-            const activeEp = episodes.find(e => Number(e.number) === Number(currentEpisode)) || episodes[0];
-            if (activeEp && activeEp.playUrl) {
-                streamUrl = activeEp.playUrl;
+            const activeEp = episodes.find(e => Number(e.number) === Number(currentEpisode));
+            if (activeEp && (activeEp.playUrl || activeEp.directPlayUrl)) {
+                streamUrl = activeEp.playUrl || activeEp.directPlayUrl;
+            } else if (currentEpisode > 1) {
+                // Do not let Episode 1 stream leak into a requested sub-episode!
+                streamUrl = '';
+            } else if (episodes[0] && (episodes[0].playUrl || episodes[0].directPlayUrl)) {
+                streamUrl = episodes[0].playUrl || episodes[0].directPlayUrl;
             }
+        } else if (currentEpisode > 1) {
+            // When episodes array is empty and currentEpisode > 1, NEVER use Episode 1's initialSourceUrl!
+            streamUrl = '';
         }
 
-        // 3. Fallback: Search for any .m3u8 in the document (supports escaped \/)
-        if (!streamUrl) {
+        // 3. Fallback: Search for any .m3u8 in the document (ONLY for Episode 1)
+        if (!streamUrl && currentEpisode === 1) {
             const m3u8Match = htmlString.match(/https?:[^\s"'<>]+?\.m3u8(?:[^\s"'<>]*)?/i);
             if (m3u8Match) {
                 streamUrl = cleanJsonUrl(m3u8Match[0]);
             }
         }
 
-        // 4. Fallback: Search for any .mp4 in the document (supports escaped \/)
-        if (!streamUrl) {
+        // 4. Fallback: Search for any .mp4 in the document (ONLY for Episode 1)
+        if (!streamUrl && currentEpisode === 1) {
             const mp4Match = htmlString.match(/https?:[^\s"'<>]+?\.mp4(?:[^\s"'<>]*)?/i);
             if (mp4Match) {
                 streamUrl = cleanJsonUrl(mp4Match[0]);

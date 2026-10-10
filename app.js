@@ -22,7 +22,8 @@ const EXCLUDED_PROXY_HOSTS = [
     'volcengine-forward.shorttv.live',
     'volces.com',
     'serealplus.com',
-    'byte-nginx'
+    'byte-nginx',
+    'cdn.narto-drama.com'
 ];
 
 function shouldBypassProxy(url) {
@@ -3938,6 +3939,14 @@ async function openDramaDetailPage(item, cardEl = null) {
         }
     }
 
+    // Reset player stream state if opening a different drama
+    const itemKey = (item.url || item.id || item.title || '').trim();
+    const currentKey = (PlayerState.currentDrama?.url || PlayerState.currentDrama?.id || PlayerState.currentDrama?.title || '').trim();
+    if (itemKey && currentKey && itemKey !== currentKey) {
+        PlayerState.episodes = [];
+        PlayerState.currentStreamUrl = '';
+    }
+
     // Transition view to detail page mode
     setAppMode('detail');
 
@@ -4026,9 +4035,29 @@ async function openDramaDetailPage(item, cardEl = null) {
     if (elements.detailEpisodesLoading) elements.detailEpisodesLoading.style.display = 'flex';
 
     try {
-        const { html } = await fetchFastHtml(item.url);
-        const detailData = DramaParser.parseEpisodesFromDetailPage(html, 'https://narto-drama.com');
-        const streamData = DramaParser.extractStreamData(html, item.url);
+        let { html } = await fetchFastHtml(item.url);
+        let detailData = DramaParser.parseEpisodesFromDetailPage(html, 'https://narto-drama.com');
+        let streamData = DramaParser.extractStreamData(html, item.url);
+
+        // If detail page did not yield episode list with streams, pre-fetch Episode 1 watch page
+        if (!streamData?.episodes || streamData.episodes.length === 0) {
+            try {
+                const ep1WatchUrl = getEpisodeWatchUrl(item.url, 1);
+                if (ep1WatchUrl && ep1WatchUrl !== item.url) {
+                    const ep1Res = await fetchFastHtml(ep1WatchUrl);
+                    if (ep1Res && ep1Res.html) {
+                        const ep1StreamData = DramaParser.extractStreamData(ep1Res.html, ep1WatchUrl);
+                        if (ep1StreamData && ep1StreamData.episodes && ep1StreamData.episodes.length > 0) {
+                            streamData = ep1StreamData;
+                            if (!detailData.episodeList || detailData.episodeList.length === 0) {
+                                detailData.episodeList = ep1StreamData.episodes;
+                                detailData.episodeCount = ep1StreamData.episodes.length;
+                            }
+                        }
+                    }
+                }
+            } catch (_) {}
+        }
 
         const dramaKey = (item.url || '').split('?')[0].replace(/\/+$/, '').replace(/\/\d+$/, '');
         if (streamData && (streamData.streamUrl || (streamData.episodes && streamData.episodes.length > 0) || streamData.refreshContext)) {
@@ -4441,6 +4470,10 @@ function getEpisodeWatchUrl(dramaUrl, epNum = 1, lang = null) {
 
     let clean = dramaUrl.split('?')[0].replace(/\/+$/, '');
     clean = clean.replace(/\/\d+$/, '');
+    // Ensure /detail/watch/ is used for narto-drama.com detail links
+    if (clean.includes('/detail/') && !clean.includes('/detail/watch/')) {
+        clean = clean.replace('/detail/', '/detail/watch/');
+    }
     return `${clean}/${targetEp}?lang=${encodeURIComponent(activeLang)}`;
 }
 
@@ -4693,7 +4726,14 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
     if (!forceRefresh && inMemoryList.length > 0) {
         const foundEp = inMemoryList.find(e => Number(e.number) === epNum || e.number === `EP ${epNum}`);
         if (foundEp && (foundEp.playUrl || foundEp.directPlayUrl)) {
-            let activeUrl = foundEp.playUrl || foundEp.directPlayUrl;
+            let activeUrl = foundEp.directPlayUrl || foundEp.playUrl;
+            if (foundEp.playUrl && !foundEp.playUrl.includes('dramabox-stream.narto-drama.com')) {
+                activeUrl = foundEp.playUrl;
+            }
+            if (foundEp.directPlayUrl && activeUrl.includes('dramabox-stream.narto-drama.com')) {
+                activeUrl = foundEp.directPlayUrl;
+                foundEp.playUrl = activeUrl;
+            }
             let activeKey = foundEp.key || null;
             let activeExp = foundEp.exp || null;
             let activeIsHls = foundEp.isHls !== undefined ? foundEp.isHls : !activeUrl.includes('.mp4');
@@ -4701,6 +4741,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             if (activeExp && (activeExp * 1000) < Date.now()) {
                 if (foundEp.directPlayUrl && foundEp.directPlayUrl !== activeUrl) {
                     activeUrl = foundEp.directPlayUrl;
+                    foundEp.playUrl = activeUrl;
                     activeExp = null;
                     activeIsHls = !activeUrl.includes('.mp4');
                 }
@@ -4724,10 +4765,17 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             renderEpisodesSheet(PlayerState.episodes, epNum);
 
             const activeEp = cached.episodes.find(e => Number(e.number) === epNum);
-            let activeUrl = (activeEp && activeEp.playUrl) || '';
+            let activeUrl = (activeEp && (activeEp.directPlayUrl || activeEp.playUrl)) || '';
+            if (activeEp?.playUrl && !activeEp.playUrl.includes('dramabox-stream.narto-drama.com')) {
+                activeUrl = activeEp.playUrl;
+            }
+            if (activeEp?.directPlayUrl && activeUrl.includes('dramabox-stream.narto-drama.com')) {
+                activeUrl = activeEp.directPlayUrl;
+                activeEp.playUrl = activeUrl;
+            }
             let activeKey = (activeEp && activeEp.key) || null;
             let activeExp = (activeEp && activeEp.exp) || null;
-            let activeIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : false;
+            let activeIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : (activeUrl ? !activeUrl.includes('.mp4') : false);
 
             if (!activeUrl && cached.refreshContext) {
                 const dynamicRes = await resolveDynamicRefreshSource(cached.refreshContext, epNum, cleanWatchUrl);
@@ -4806,10 +4854,17 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
             renderEpisodesSheet(PlayerState.episodes, epNum);
 
             const activeEp = streamData.episodes.find(e => Number(e.number) === epNum);
-            let targetUrl = (activeEp && activeEp.playUrl) || streamData.streamUrl;
-            let targetKey = (activeEp && activeEp.key) || streamData.key || null;
-            let targetExp = (activeEp && activeEp.exp) || streamData.exp || null;
-            let targetIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : streamData.isHls;
+            let targetUrl = (activeEp && (activeEp.directPlayUrl || activeEp.playUrl)) || (epNum === 1 ? streamData.streamUrl : '');
+            if (activeEp?.playUrl && !activeEp.playUrl.includes('dramabox-stream.narto-drama.com')) {
+                targetUrl = activeEp.playUrl;
+            }
+            if (activeEp?.directPlayUrl && targetUrl.includes('dramabox-stream.narto-drama.com')) {
+                targetUrl = activeEp.directPlayUrl;
+                activeEp.playUrl = targetUrl;
+            }
+            let targetKey = (activeEp && activeEp.key) || (epNum === 1 ? streamData.key : null) || null;
+            let targetExp = (activeEp && activeEp.exp) || (epNum === 1 ? streamData.exp : null) || null;
+            let targetIsHls = (activeEp && activeEp.isHls) !== undefined ? activeEp.isHls : (targetUrl ? !targetUrl.includes('.mp4') : streamData.isHls);
 
             // If seed-mode drama with empty playUrl, dynamically resolve stream
             if (!targetUrl && streamData.refreshContext) {
@@ -4861,7 +4916,7 @@ async function playEpisode(drama, episodeNumber, episodeUrl = '', forceRefresh =
                 loadStreamInVideo(targetUrl, targetIsHls, targetKey, targetExp, isSeamless, currentSession);
                 return;
             }
-        } else if (streamData.streamUrl) {
+        } else if (epNum === 1 && streamData.streamUrl) {
             let directUrl = streamData.streamUrl;
             if (streamData.exp && (streamData.exp * 1000) < Date.now()) {
                 console.warn('[Player] Direct stream expired, trying refreshContext...');
@@ -5438,6 +5493,7 @@ async function attemptEpisodeStreamRecovery(failedUrl, reason = 'stream_error') 
             console.log('[Player Recovery] Switching to active episode directPlayUrl:', activeEp.directPlayUrl);
             const direct = activeEp.directPlayUrl;
             activeEp.directPlayUrl = null; // Prevent retry loop
+            activeEp.playUrl = direct; // Update playUrl so future plays use this recovered CDN stream
             const cleanD = (direct || '').split('?')[0].toLowerCase();
             const isMp4 = cleanD.endsWith('.mp4') || cleanD.endsWith('.webm') || cleanD.endsWith('.m4v');
             const isHls = !isMp4 && (activeEp.isHls === true || /\.m3u8(?:\?|$)/i.test(direct));
@@ -5458,6 +5514,7 @@ async function attemptEpisodeStreamRecovery(failedUrl, reason = 'stream_error') 
             console.log('[Player Recovery] Switching to active episode fallbackUrl:', activeEp.fallbackUrl);
             const fallback = activeEp.fallbackUrl;
             activeEp.fallbackUrl = null; // Prevent retry loop
+            activeEp.playUrl = fallback; // Update playUrl so future plays use this recovered stream
             const cleanF = (fallback || '').split('?')[0].toLowerCase();
             const isMp4 = cleanF.endsWith('.mp4') || cleanF.endsWith('.webm') || cleanF.endsWith('.m4v');
             const isHls = !isMp4 && (activeEp.isHls === true || /\.m3u8(?:\?|$)/i.test(fallback));
@@ -5578,6 +5635,7 @@ function loadStreamInVideo(streamUrl, isHlsHint = false, streamKey = null, strea
 
     // Reset video element & attributes
     videoEl.onerror = null;
+    delete videoEl.dataset.triedDirect;
     videoEl.removeAttribute('controls');
     videoEl.setAttribute('playsinline', '');
     videoEl.setAttribute('webkit-playsinline', '');
@@ -5781,23 +5839,25 @@ function loadNativeVideo(streamUrl, videoEl, isAppleHls = false) {
             }
         }
 
-        // 3. If native video failed on a proxied URL, automatically fallback to direct unproxied URL!
-        if (streamUrl.includes('?url=')) {
+        // 3. Check if there is an alternative play URL or dynamic recovery route first!
+        const recovered = await attemptEpisodeStreamRecovery(streamUrl, 'native_video_error');
+        if (recovered) return;
+
+        // 4. If native video failed on a proxied URL, automatically attempt unproxied direct ONCE
+        if (!videoEl.dataset.triedDirect && streamUrl.includes('?url=')) {
             try {
                 const u = new URL(streamUrl);
                 const rawUrl = u.searchParams.get('url');
                 if (rawUrl) {
                     const directUrl = decodeURIComponent(rawUrl);
-                    console.warn(`[Player] Proxied native video failed. Retrying directly with:`, directUrl);
-                    loadStreamInVideo(directUrl, false, PlayerState.currentStreamKey, PlayerState.currentStreamExp);
+                    console.warn(`[Player] Proxied native video failed. Retrying direct once with:`, directUrl);
+                    videoEl.dataset.triedDirect = 'true';
+                    videoEl.src = directUrl;
+                    videoEl.play().catch(() => {});
                     return;
                 }
             } catch (_) {}
         }
-
-        // 4. Check if there is an alternative play URL or dynamic recovery route
-        const recovered = await attemptEpisodeStreamRecovery(streamUrl, 'native_video_error');
-        if (recovered) return;
 
         // If a network interruption occurs while video was already playing, attempt seamless resume
         if (err && err.code === MediaError.MEDIA_ERR_NETWORK && videoEl.currentTime > 0) {

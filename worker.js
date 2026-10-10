@@ -267,64 +267,31 @@ async function processRequest(request, env, ctx) {
     }, timeoutMs);
 
     let response;
-    const subEpMatch = pathname.match(/\/(?:detail\/)?watch\/([^/?#]+)\/(\d+)/i);
-    const isSubEpisode = subEpMatch && parseInt(subEpMatch[2], 10) > 1;
-
     try {
         fetchInit.signal = abortCtrl.signal;
         response = await fetch(parsed.href, fetchInit);
 
-        // Retry search/import if upstream scraping gave initial 502/504
+        // Retry search/import or edge requests if upstream gave initial 502/504
         if ((response.status === 502 || response.status === 504) && isImportOrScrape && !abortCtrl.signal.aborted) {
             for (let retry = 0; retry < 2 && (response.status === 502 || response.status === 504) && !abortCtrl.signal.aborted; retry++) {
-                await new Promise(r => setTimeout(r, 2500));
+                await new Promise(r => setTimeout(r, 2000));
                 if (!abortCtrl.signal.aborted) {
                     response = await fetch(parsed.href, fetchInit);
                 }
             }
         }
-
-        // Sub-episode fallback: If upstream returns 5xx (500, 520-530, 502, 504) on /watch/.../6,
-        // automatically fallback to fetching Episode 1 (/1), which contains all episodes in episodeItemsRaw!
-        if (isSubEpisode && (response.status >= 500 || !response.ok) && !abortCtrl.signal.aborted) {
-            try {
-                const ep1Url = new URL(parsed.href);
-                ep1Url.pathname = parsed.pathname.replace(new RegExp(`/${subEpMatch[2]}(?=[/?#]|$)`), '/1');
-                const ep1Res = await fetch(ep1Url.toString(), fetchInit);
-                if (ep1Res.ok) {
-                    response = ep1Res;
-                }
-            } catch (_) {}
-        }
     } catch (err) {
         clearTimeout(timeoutId);
-        // If initial fetch timed out or failed on a sub-episode URL, attempt episode 1 fallback
-        if (isSubEpisode) {
-            try {
-                const ep1Url = new URL(parsed.href);
-                ep1Url.pathname = parsed.pathname.replace(new RegExp(`/${subEpMatch[2]}(?=[/?#]|$)`), '/1');
-                const ep1Res = await fetch(ep1Url.toString(), {
-                    ...fetchInit,
-                    signal: undefined
-                });
-                if (ep1Res.ok) {
-                    response = ep1Res;
-                }
-            } catch (_) {}
-        }
-
-        if (!response) {
-            if (err.name === 'AbortError') {
-                return json({
-                    error: "Upstream request timed out or client aborted.",
-                    target: parsed.href
-                }, 504, request);
-            }
+        if (err.name === 'AbortError') {
             return json({
-                error: `Fetch failed: ${err.message}`,
+                error: "Upstream request timed out or client aborted.",
                 target: parsed.href
-            }, 502, request);
+            }, 504, request);
         }
+        return json({
+            error: `Fetch failed: ${err.message}`,
+            target: parsed.href
+        }, 502, request);
     } finally {
         clearTimeout(timeoutId);
     }
