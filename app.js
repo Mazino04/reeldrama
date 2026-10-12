@@ -3194,7 +3194,7 @@ async function fetchFastJson(targetUrl) {
         throw new Error('Invalid URL or disallowed file protocol.');
     }
 
-    const DEFAULT_ND_SESSION_COOKIE = 'laravel-session=eyJpdiI6IkV4VjZWK2dnbHdCQmFMV2duU2IwOGc9PSIsInZhbHVlIjoiZVBpRHVOaktyNDlDYzM2Y1BHcVBRZzVSOWIwZkJpWUhMUm5SYzc1amllZkpPM2RsRFNxUURQaHFJdEMycko1c2RqajBNNTEvaUZVdzFUOHkyUEs0RXlUS2RqcnVzdTkydm1ZNmlrL3BjSThqL3kyUlYzNWNJOWNVTUp3alFLa3kiLCJtYWMiOiI5MmUzOWQ1YzNiZTI3NDE3MjA1ZDUwMzYxNDRkNDViZGRiNjdlZTk2MWZmZGQ0MjI2MGVkZTE1MzM2ZTlhZTFmIiwidGFnIjoiIn0%3D';
+    const DEFAULT_ND_SESSION_COOKIE = 'laravel-session=eyJpdiI6ImdIRWQ3MGd3Smlha09UNGUrR2IvOXc9PSIsInZhbHVlIjoieFk1cE9FMWZ5RFVvSWdYSEIrOVpMb0U1eEtIUWdTcXZuVzVla0Vua2lPRnJUMytaNDV4bGtHNVhQOUpjV3ZtK2FVMkVSc2J3MDRRdHV5THRVZHJNdjNZS1o4c2dZNC9ldFpaTmNKRFU4YmU5Mi92cWxxd3N3eTJrRnFTUGtTVEMiLCJtYWMiOiJkNDQ3NWNlYmM5Njk3YzJlZTBiY2I1MjQxNjIzNTM3OWFmZmEyMjdlOGFkZWQwMGE5YWM1NWVjNWE2OTU0MDI5IiwidGFnIjoiIn0%3D';
     const savedCookie = localStorage.getItem('nd_session_cookie') || DEFAULT_ND_SESSION_COOKIE;
     const isWorkerEnabled = Boolean(CF_WORKER_URL && AppState.proxyMethod !== 'direct');
 
