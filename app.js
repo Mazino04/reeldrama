@@ -11,6 +11,7 @@
  *
  * Leave as empty string ('') to use the built-in public proxy fallback chain.
  * ─────────────────────────────────────────────────────────────────────────────
+ */
 const CF_WORKER_URL = 'https://reeldrama.proxy-3b8.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
 
 // Default full session cookie (includes cf_clearance, nd_ck, XSRF-TOKEN, laravel-session)
