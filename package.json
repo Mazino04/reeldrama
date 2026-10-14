@@ -1,0 +1,25 @@
+{
+  "name": "reeldrama",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "login": "node scripts/auto-login.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mazino04/reeldrama.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Mazino04/reeldrama/issues"
+  },
+  "homepage": "https://github.com/Mazino04/reeldrama#readme",
+  "dependencies": {
+    "playwright": "^1.64.0"
+  }
+}
