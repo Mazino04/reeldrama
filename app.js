@@ -11,8 +11,14 @@
  *
  * Leave as empty string ('') to use the built-in public proxy fallback chain.
  * ─────────────────────────────────────────────────────────────────────────────
- */
 const CF_WORKER_URL = 'https://reeldrama.proxy-3b8.workers.dev'; // ← Paste your Cloudflare Worker URL here after deploying
+
+// Default full session cookie (includes cf_clearance, nd_ck, XSRF-TOKEN, laravel-session)
+const DEFAULT_ND_SESSION_COOKIE = 'cf_clearance=YyLl.X5p6LfX6J3PAAVVPhGh.5XgqXRc6vKUEFxRWyI-1791946933-1.2.1.1-u1OWNw_YyA.qIWV.oXRvyPzGhqL0nqjnFh3Hl9_lEXRrSH99H._n8c.CL05wr4JpIevKvkuNdzIBUmmbFn2NS_FZwikqz3eQni.bNV3lZ.ngQcyEMKkEV3G7w.E1ntr.YY6uMhdM.BByo037hXRmX5.6SscvbyS360WQnzj942h.gmPmBN.wDuufD9Sz2aJT9Zmlb6ilLzzLDREkqczzCya5E_QMkuRPYis_c.8SKE4yPCg5OK6BkzPbPqBNIFYgI2NdLVMxHW9W8xaM_S11G590asnwmcGF7_xd8cxKPhltU5UtWgs6Bj6jbWedPoWqsnpF3j17e3gimh82LX25zqlIx6cR.VYZlR.6DrYcuWc; nd_ck=mv7ixq9zzio1o1dw; XSRF-TOKEN=eyJpdiI6IkRNWjAvVGJZMkZWUW4zYm1pNHV5eVE9PSIsInZhbHVlIjoiUkJjL3RVTE1CRUV0Q1pxRmJhRll5bGpGR0ZFdmQ4czZuU3NTV1RyMTltbEJhQ2wwWXJMTmVUOVg0WFc0a200YWE2OEl5U0t5S2RSc01ubENidU82QUpuU21uNWptWGtKRjh4c0d3cXZEckZ6THBmWmJ2djVpRW5VcXpFeU8xcWkiLCJtYWMiOiJjYTA4ODg1YzU2Nzg1MDcxMTRmMDEwZDY4MzY0NjVkNjRkZDI2Y2RhMjA3ZDdlYjA1NGQ0ZGVlNzM0NjA2NGFkIiwidGFnIjoiIn0%3D; laravel-session=eyJpdiI6IlBQcy9tSE16Q3NOOG5nYUl2bE14WGc9PSIsInZhbHVlIjoiZlRkTk80Qkd1VGZud0VKcGpqc2hhQTdtcEw3SFZOcENMNUwzQ2ZablplQVprcHdxZHNKbG9sYnI3cE9STEU0aXVGTjVjb2dodlR1YTBuYU9XZ2o0bmQzb2ZJWThNYkl1WnYwQ0xtS25KeDM0YkJNZXdYM2VzQ2ZWNDNEN0RvMWwiLCJtYWMiOiIwYzc4OTc2MmUyZTg0MTFjZWM4MDNiMzlkYjlkMWQ2YWMzZWM0MWQ0YjY0OTFkNTZiZjk1YTc3NDYyZDQ2OWI4IiwidGFnIjoiIn0%3D';
+
+function getActiveNdSessionCookie() {
+    return localStorage.getItem('nd_session_cookie') || DEFAULT_ND_SESSION_COOKIE;
+}
 
 // Domains that supply their own CORS headers (Access-Control-Allow-Origin: *)
 // or reject worker proxying with 403 (due to auth_key or Referer validation).
@@ -3194,8 +3200,7 @@ async function fetchFastJson(targetUrl) {
         throw new Error('Invalid URL or disallowed file protocol.');
     }
 
-    const DEFAULT_ND_SESSION_COOKIE = 'laravel-session=eyJpdiI6InNPdUExVUhaNFluYlJxL1pGeU1BK2c9PSIsInZhbHVlIjoic21paFRKRmFFQ0Z5eWUwbTlOUzA4U2pkTk0rQXR0V0ZmMDlrN1BIbm5Sa3FsY3BvcFE1NzZrSjlidEJOZDVGNWZCRGE1bkdYRzh6RWhBbE5YMFBPQXVtbnN5T0FyTDIxaVR4emtBdFN0dVlRWFV3R29MT3FOWUxkSDk4UUtYODYiLCJtYWMiOiJkYWJkMjI0YzUwNzcxZmQzYzVlZDgwNmZmNTMzZWY5N2I5MjE1MTUyMmNlZTJkMWY3OGQ1NzE1NDczZTZhMjYwIiwidGFnIjoiIn0%253D';
-    const savedCookie = localStorage.getItem('nd_session_cookie') || DEFAULT_ND_SESSION_COOKIE;
+    const savedCookie = getActiveNdSessionCookie();
     const isWorkerEnabled = Boolean(CF_WORKER_URL && AppState.proxyMethod !== 'direct');
 
     // 1. Primary Route: Cloudflare Worker proxy (eliminates CORS and forwards session cookie)
@@ -3458,9 +3463,15 @@ async function fetchFastHtml(targetUrl) {
         const maxAttempts = isImport ? 4 : 2;
         let lastErr = null;
 
+        const savedCookie = getActiveNdSessionCookie();
+        const proxyHeaders = {};
+        if (savedCookie) {
+            proxyHeaders['X-ND-Cookie'] = savedCookie;
+        }
+
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                const text = await tryFetch(workerUrl, { timeout: fetchTimeout });
+                const text = await tryFetch(workerUrl, { headers: proxyHeaders, timeout: fetchTimeout });
                 if (isValidDramaHtml(text)) {
                     DetailCache.set(targetUrl, text);
                     return { html: text, source: attempt === 1 ? 'CF Worker' : `CF Worker (Retry ${attempt - 1})` };
@@ -4505,12 +4516,18 @@ async function resolveDynamicRefreshSource(refreshContext, epNum, fallbackWatchU
         const proxyBase = CF_WORKER_URL ? CF_WORKER_URL.replace(/\/+$/, '') : '';
         const fetchTarget = proxyBase ? `${proxyBase}/?url=${encodeURIComponent(refreshUrl)}` : refreshUrl;
 
+        const currentCookie = getActiveNdSessionCookie();
+        const reqHeaders = {
+            'Accept': 'application/json, text/plain, */*',
+            'X-Requested-With': 'XMLHttpRequest'
+        };
+        if (currentCookie) {
+            reqHeaders['X-ND-Cookie'] = currentCookie;
+        }
+
         const res = await fetchWithTimeout(fetchTarget, {
             mode: 'cors',
-            headers: {
-                'Accept': 'application/json, text/plain, */*',
-                'X-Requested-With': 'XMLHttpRequest'
-            },
+            headers: reqHeaders,
             timeout: 15000
         });
 

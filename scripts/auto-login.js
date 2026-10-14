@@ -20,13 +20,10 @@ async function autoLogin() {
     console.log(`👤 Account: ${EMAIL}`);
     console.log('========================================================\n');
 
-    const userDataDir = path.join(__dirname, '..', '.chrome-profile');
-
-    console.log('1️⃣  Launching persistent Chrome context with stealth...');
-    const context = await chromium.launchPersistentContext(userDataDir, {
+    console.log('1️⃣  Launching Chrome with stealth anti-bot bypass...');
+    const browser = await chromium.launch({
         channel: 'chrome',
         headless: false,
-        viewport: { width: 1280, height: 800 },
         args: [
             '--disable-blink-features=AutomationControlled',
             '--no-sandbox'
@@ -34,7 +31,12 @@ async function autoLogin() {
         ignoreDefaultArgs: ['--enable-automation']
     });
 
-    const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+    const context = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+    });
+
+    const page = await context.newPage();
 
     // Mask navigator.webdriver
     await page.addInitScript(() => {
@@ -132,6 +134,17 @@ async function autoLogin() {
 
     if (loginResponseData) {
         console.log(`Login Response [${loginResponseData.status}]:`, loginResponseData.body.slice(0, 300));
+        let json = null;
+        try { json = JSON.parse(loginResponseData.body); } catch (_) {}
+        if (loginResponseData.status !== 200 || (json && json.ok === false)) {
+            console.error('\n❌ Login rejected by server: ' + (json?.message || `HTTP ${loginResponseData.status}`));
+            await browser.close();
+            process.exit(1);
+        }
+    } else {
+        console.error('\n❌ No login response intercepted from server.');
+        await browser.close();
+        process.exit(1);
     }
 
     // Allow cookies to be set in the browser context
@@ -158,7 +171,7 @@ async function autoLogin() {
 
     if (!laravelSession) {
         console.error('\n❌ Error: laravel-session cookie was not found in browser context.');
-        await context.close();
+        await browser.close();
         process.exit(1);
     }
 
@@ -185,12 +198,12 @@ async function autoLogin() {
     }, null, 2), 'utf-8');
     console.log(`💾 Saved session JSON to: ${sessionJsonPath}`);
 
-    // 3. Automatically patch app.js with the new DEFAULT_ND_SESSION_COOKIE
+    // 3. Automatically patch app.js with the clean, correctly encoded DEFAULT_ND_SESSION_COOKIE
     const appJsPath = path.join(__dirname, '..', 'app.js');
     if (fs.existsSync(appJsPath)) {
         let appJs = fs.readFileSync(appJsPath, 'utf-8');
         const defaultCookieRegex = /const\s+DEFAULT_ND_SESSION_COOKIE\s*=\s*['"][^'"]*['"];/;
-        const newCookieLine = `const DEFAULT_ND_SESSION_COOKIE = 'laravel-session=${encodeURIComponent(laravelSession)}';`;
+        const newCookieLine = `const DEFAULT_ND_SESSION_COOKIE = '${fullCookieString}';`;
 
         if (defaultCookieRegex.test(appJs)) {
             appJs = appJs.replace(defaultCookieRegex, newCookieLine);
@@ -205,7 +218,7 @@ async function autoLogin() {
     console.log('🎉 SUCCESS! Login completed and session cookies updated.');
     console.log('========================================================\n');
 
-    await context.close();
+    await browser.close();
 }
 
 autoLogin().catch(err => {
